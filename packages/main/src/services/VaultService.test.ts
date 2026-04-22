@@ -100,4 +100,21 @@ describe("VaultService", () => {
     const back = await fs.readFile(destPath);
     expect(back.length).toBe(0);
   });
+
+  it("garbage collect removes orphan chunks from #files", async () => {
+    const srcPath = await tmpFile(Buffer.from("normal upload"));
+    await svc.upload(srcPath).done;
+
+    // Simulate a crashed upload: add an unreferenced message directly to #files.
+    await (discord as unknown as { uploadAttachment: (c: string, d: Buffer, n: string) => Promise<unknown> })
+      .uploadAttachment("files", Buffer.from("orphan-data"), "orphan.bin");
+
+    const result = await svc.garbageCollect();
+    expect(result.orphans).toBe(1);
+    expect(result.reclaimedBytes).toBe(0);
+
+    // Running it again should now find no orphans.
+    const again = await svc.garbageCollect();
+    expect(again.orphans).toBe(0);
+  });
 });

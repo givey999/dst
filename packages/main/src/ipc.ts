@@ -116,8 +116,8 @@ export function registerIpc(app: AppState): void {
         }
 
         case "vault.garbageCollect":
-          // Stub until Task 17
-          return ok({ orphans: 0, reclaimedBytes: 0 });
+          if (!app.vault) throw new Error("vault not ready");
+          return ok(await app.vault.garbageCollect());
 
         case "setup.listBotGuilds":
           return ok(await app.discord.listGuilds());

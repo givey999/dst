@@ -12,6 +12,7 @@ interface DiscordOps {
   uploadAttachment(channelId: string, data: Buffer, filename: string): Promise<{ messageId: string }>;
   fetchAttachmentData(channelId: string, messageId: string): Promise<Buffer>;
   deleteMessages(channelId: string, messageIds: string[]): Promise<void>;
+  listChannelMessageIds(channelId: string): Promise<string[]>;
 }
 
 export interface VaultServiceDeps {
@@ -290,6 +291,24 @@ export class VaultService {
     await this.discord.deleteMessages(this.filesChannelId, ids);
     this.index.removeFile(fileId);
     this.scheduleIndexSave();
+  }
+
+  async garbageCollect(): Promise<{ orphans: number; reclaimedBytes: number }> {
+    this.requireUnlocked();
+    const idx = this.index.current();
+    const referenced = new Set<string>();
+    for (const f of idx.files) {
+      for (const c of f.chunks) referenced.add(c.messageId);
+    }
+
+    const allInFiles = await this.discord.listChannelMessageIds(this.filesChannelId);
+    const orphans = allInFiles.filter((id) => !referenced.has(id));
+
+    if (orphans.length > 0) {
+      await this.discord.deleteMessages(this.filesChannelId, orphans);
+    }
+    // We don't have a cheap way to know bytes without fetching each — v1 returns 0.
+    return { orphans: orphans.length, reclaimedBytes: 0 };
   }
 
   async flush(): Promise<void> {
