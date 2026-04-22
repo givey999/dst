@@ -131,15 +131,18 @@ export class DiscordClient {
   async pinAndUnpinPrevious(channelId: string, messageId: string): Promise<void> {
     this.requireClient();
     const ch = await this.channel(channelId);
-    const msg = await ch.messages.fetch(messageId);
-    await msg.pin();
 
+    // Unpin first, then pin: avoids hitting Discord's 50-pins-per-channel cap
+    // if the channel ever accumulated stale pins from crashes or manual edits.
     const pins = await ch.messages.fetchPinned();
     for (const pinned of pins.values()) {
       if (pinned.id !== messageId) {
         await pinned.unpin();
       }
     }
+
+    const msg = await ch.messages.fetch(messageId);
+    await msg.pin();
   }
 
   async latestPinnedMessage(channelId: string): Promise<Message | null> {
@@ -168,7 +171,9 @@ export class DiscordClient {
       if (batch.size === 0) break;
       const arr = [...batch.values()].sort((a, b) => (a.createdTimestamp < b.createdTimestamp ? 1 : -1));
       for (const m of arr) out.push(m.id);
-      before = arr[arr.length - 1]?.id;
+      const next = arr[arr.length - 1]?.id;
+      if (!next) break;
+      before = next;
       if (batch.size < 100) break;
     }
     return out;
