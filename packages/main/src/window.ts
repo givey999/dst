@@ -14,7 +14,7 @@ export async function createMainWindow(): Promise<BrowserWindow> {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
-      preload: path.resolve(__dirname, "../../preload/dist/index.cjs"),
+      preload: path.resolve(__dirname, "../../preload/dist/index.js"),
     },
   });
 

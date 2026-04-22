@@ -2,10 +2,9 @@
   "name": "@dst/preload",
   "version": "0.1.0",
   "private": true,
-  "type": "module",
-  "main": "dist/index.cjs",
+  "main": "dist/index.js",
   "scripts": {
-    "build": "tsc -p tsconfig.build.json && node -e \"const fs=require('fs');fs.renameSync('dist/index.js','dist/index.cjs');try{fs.renameSync('dist/index.js.map','dist/index.cjs.map')}catch(e){}\"",
+    "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "echo 'no lint'"
   },
