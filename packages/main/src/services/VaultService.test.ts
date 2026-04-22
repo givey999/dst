@@ -87,4 +87,17 @@ describe("VaultService", () => {
     await svc.delete(id);
     expect(svc.list().length).toBe(0);
   });
+
+  it("round-trips an empty (0-byte) file", async () => {
+    const srcPath = await tmpFile(Buffer.alloc(0));
+    await svc.upload(srcPath).done;
+    const files = svc.list();
+    expect(files.length).toBe(1);
+    expect(files[0]?.size).toBe(0);
+
+    const destPath = path.join(os.tmpdir(), `dst-empty-${Date.now()}-${Math.random()}.bin`);
+    await svc.download(files[0]!.id, destPath).done;
+    const back = await fs.readFile(destPath);
+    expect(back.length).toBe(0);
+  });
 });

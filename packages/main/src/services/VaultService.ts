@@ -52,6 +52,8 @@ export class VaultService {
   private unlocked = false;
   private indexSaveTimer: NodeJS.Timeout | null = null;
 
+  readonly events = new EventEmitter();
+
   constructor(deps: VaultServiceDeps) {
     this.crypto = deps.crypto;
     this.chunker = deps.chunker;
@@ -90,22 +92,21 @@ export class VaultService {
     this.requireUnlocked();
     const uploadId = randomUUID();
     const events = new EventEmitter();
+    const name = path.basename(localPath);
     let cancelled = false;
+
+    // Hoisted so the error handler can report progress-at-failure.
+    let totalBytes = 0;
+    let chunksTotal = 0;
+    let chunksComplete = 0;
+    let bytesUploaded = 0;
 
     const done = (async (): Promise<FileEntry> => {
       const stat = await fs.stat(localPath);
-      const name = path.basename(localPath);
+      totalBytes = stat.size;
       const fileId = randomUUID();
-      const total = Math.max(1, Math.ceil(stat.size / this.chunkSize));
-      events.emit("progress", {
-        uploadId,
-        name,
-        bytesUploaded: 0,
-        total: stat.size,
-        chunksComplete: 0,
-        chunksTotal: total,
-        state: "uploading",
-      });
+      chunksTotal = Math.max(1, Math.ceil(stat.size / this.chunkSize));
+      events.emit("progress", { uploadId, name, bytesUploaded: 0, total: totalBytes, chunksComplete: 0, chunksTotal, state: "uploading" });
 
       const stream = createReadStream(localPath, { highWaterMark: this.chunkSize });
       const chunks: Array<{ seq: number; data: Buffer; header: Buffer }> = [];
@@ -113,36 +114,24 @@ export class VaultService {
         chunks.push(c);
       }
 
-      let chunksComplete = 0;
-      let bytesUploaded = 0;
       const chunkRefs: ChunkRef[] = [];
+      let errored = false;
 
       const uploadOne = async (c: { seq: number; data: Buffer; header: Buffer }): Promise<ChunkRef> => {
         if (cancelled) throw new Error("cancelled");
-        // vaultKey is guaranteed non-null: requireUnlocked() was called at entry of upload()
         const ct = await this.crypto.encryptChunk(this.vaultKey!, {
           fileId,
           seq: c.seq,
-          totalChunks: total,
+          totalChunks: chunksTotal,
           chunkHeader: c.header,
           plaintext: c.data,
         });
         const framed = Buffer.concat([c.header, ct]);
-        const { messageId } = await this.discord.uploadAttachment(
-          this.filesChannelId,
-          framed,
-          `${fileId}-${c.seq}.bin`,
-        );
+        const { messageId } = await this.discord.uploadAttachment(this.filesChannelId, framed, `${fileId}-${c.seq}.bin`);
         chunksComplete++;
         bytesUploaded += c.data.length;
         events.emit("progress", {
-          uploadId,
-          name,
-          bytesUploaded,
-          total: stat.size,
-          chunksComplete,
-          chunksTotal: total,
-          state: "uploading",
+          uploadId, name, bytesUploaded, total: totalBytes, chunksComplete, chunksTotal, state: "uploading",
         });
         return { messageId, seq: c.seq, ciphertextSize: framed.length };
       };
@@ -150,16 +139,19 @@ export class VaultService {
       const queue = [...chunks];
       const workers: Array<Promise<void>> = [];
       for (let w = 0; w < CONCURRENCY; w++) {
-        workers.push(
-          (async () => {
-            while (queue.length > 0) {
-              const next = queue.shift();
-              if (!next) break;
+        workers.push((async () => {
+          while (!errored && !cancelled && queue.length > 0) {
+            const next = queue.shift();
+            if (!next) break;
+            try {
               const ref = await uploadOne(next);
               chunkRefs.push(ref);
+            } catch (e) {
+              errored = true;
+              throw e;
             }
-          })(),
-        );
+          }
+        })());
       }
       await Promise.all(workers);
 
@@ -176,37 +168,21 @@ export class VaultService {
       };
       this.index.addFile(entry);
       this.scheduleIndexSave();
-      events.emit("progress", {
-        uploadId,
-        name,
-        bytesUploaded: stat.size,
-        total: stat.size,
-        chunksComplete: total,
-        chunksTotal: total,
-        state: "done",
-      });
+      events.emit("progress", { uploadId, name, bytesUploaded: stat.size, total: stat.size, chunksComplete: chunksTotal, chunksTotal, state: "done" });
       return entry;
     })();
 
     done.catch((err: Error) => {
       events.emit("progress", {
-        uploadId,
-        name: path.basename(localPath),
-        bytesUploaded: 0,
-        total: 0,
-        chunksComplete: 0,
-        chunksTotal: 0,
-        state: "error",
-        error: err.message,
+        uploadId, name, bytesUploaded, total: totalBytes, chunksComplete, chunksTotal,
+        state: "error", error: err.message,
       });
     });
 
     return {
       uploadId,
       events,
-      cancel: () => {
-        cancelled = true;
-      },
+      cancel: () => { cancelled = true; },
       done,
     };
   }
@@ -217,21 +193,22 @@ export class VaultService {
     const events = new EventEmitter();
     let cancelled = false;
 
+    // Hoisted so the error handler can report progress-at-failure.
+    let resolvedName = path.basename(destPath);
+    let totalBytes = 0;
+    let bytesDownloaded = 0;
+
     const done = (async (): Promise<void> => {
       const file = this.index.findFile(fileId);
       if (!file) throw new Error("file not found");
+      resolvedName = file.name;
+      totalBytes = file.size;
 
-      events.emit("progress", {
-        downloadId,
-        name: file.name,
-        bytesDownloaded: 0,
-        total: file.size,
-        state: "fetching",
-      });
+      events.emit("progress", { downloadId, name: resolvedName, bytesDownloaded: 0, total: totalBytes, state: "fetching" });
 
       const results = new Map<number, Buffer>();
       const queue = [...file.chunks];
-      let bytesDownloaded = 0;
+      let errored = false;
 
       const downloadOne = async (ref: ChunkRef): Promise<void> => {
         if (cancelled) throw new Error("cancelled");
@@ -239,7 +216,6 @@ export class VaultService {
         const chunkHeader = framed.subarray(0, 16);
         const ct = framed.subarray(16);
 
-        // vaultKey is guaranteed non-null: requireUnlocked() was called at entry of download()
         const pt = await this.crypto.decryptChunk(this.vaultKey!, {
           fileId: file.id,
           seq: ref.seq,
@@ -249,26 +225,23 @@ export class VaultService {
         });
         results.set(ref.seq, pt);
         bytesDownloaded += pt.length;
-        events.emit("progress", {
-          downloadId,
-          name: file.name,
-          bytesDownloaded,
-          total: file.size,
-          state: "decrypting",
-        });
+        events.emit("progress", { downloadId, name: resolvedName, bytesDownloaded, total: totalBytes, state: "decrypting" });
       };
 
       const workers: Array<Promise<void>> = [];
       for (let w = 0; w < CONCURRENCY; w++) {
-        workers.push(
-          (async () => {
-            while (queue.length > 0) {
-              const n = queue.shift();
-              if (!n) break;
+        workers.push((async () => {
+          while (!errored && !cancelled && queue.length > 0) {
+            const n = queue.shift();
+            if (!n) break;
+            try {
               await downloadOne(n);
+            } catch (e) {
+              errored = true;
+              throw e;
             }
-          })(),
-        );
+          }
+        })());
       }
       await Promise.all(workers);
 
@@ -281,32 +254,20 @@ export class VaultService {
       const out = Buffer.concat(ordered);
       await pipeline(Readable.from(out), createWriteStream(destPath));
 
-      events.emit("progress", {
-        downloadId,
-        name: file.name,
-        bytesDownloaded: file.size,
-        total: file.size,
-        state: "done",
-      });
+      events.emit("progress", { downloadId, name: resolvedName, bytesDownloaded: totalBytes, total: totalBytes, state: "done" });
     })();
 
     done.catch((err: Error) => {
       events.emit("progress", {
-        downloadId,
-        name: "?",
-        bytesDownloaded: 0,
-        total: 0,
-        state: "error",
-        error: err.message,
+        downloadId, name: resolvedName, bytesDownloaded, total: totalBytes,
+        state: "error", error: err.message,
       });
     });
 
     return {
       downloadId,
       events,
-      cancel: () => {
-        cancelled = true;
-      },
+      cancel: () => { cancelled = true; },
       done,
     };
   }
@@ -325,7 +286,12 @@ export class VaultService {
     if (this.indexSaveTimer) {
       clearTimeout(this.indexSaveTimer);
       this.indexSaveTimer = null;
-      await this.index.save();
+      try {
+        await this.index.save();
+      } catch (err) {
+        this.events.emit("indexSaveFailed", err as Error);
+        throw err;
+      }
     }
   }
 
@@ -333,8 +299,8 @@ export class VaultService {
     if (this.indexSaveTimer) clearTimeout(this.indexSaveTimer);
     this.indexSaveTimer = setTimeout(() => {
       this.indexSaveTimer = null;
-      void this.index.save().catch(() => {
-        // swallow; UI will handle via next attempt / error event
+      void this.index.save().catch((err: Error) => {
+        this.events.emit("indexSaveFailed", err);
       });
     }, INDEX_SAVE_DEBOUNCE_MS);
   }
