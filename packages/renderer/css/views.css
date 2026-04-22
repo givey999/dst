@@ -98,3 +98,16 @@
 .upload-row.done .upload-bar-fill { background: var(--ok); }
 .upload-row.error .upload-state { color: var(--danger); }
 .upload-row.done .upload-state { color: var(--ok); }
+
+.settings { padding: 24px; overflow-y: auto; height: 100%; max-width: 640px; }
+.settings-section { margin-bottom: 32px; }
+.settings-section h2 { font-size: 14px; color: var(--fg-dim); font-weight: 500; margin: 0 0 12px; text-transform: uppercase; letter-spacing: 0.1em; }
+.settings-section summary { font-size: 14px; color: var(--fg-dim); font-weight: 500; margin: 0 0 12px; text-transform: uppercase; letter-spacing: 0.1em; cursor: pointer; }
+.settings-row { display: flex; align-items: center; gap: 16px; padding: 8px 0; }
+.settings-label { flex: 0 0 160px; color: var(--fg-dim); }
+.settings-value { flex: 1; }
+.settings-form { display: flex; flex-direction: column; gap: 8px; max-width: 320px; }
+.settings-hint { color: var(--fg-dim); font-size: 12px; }
+.settings-error { font-size: 13px; min-height: 18px; }
+.settings-error.ok { color: var(--ok); }
+.settings-error.err { color: var(--danger); }
