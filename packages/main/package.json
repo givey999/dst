@@ -5,8 +5,10 @@
   "type": "module",
   "main": "dist/index.cjs",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
-    "build": "tsc -p tsconfig.build.json",
+    "dev": "electron --inspect=5858 --no-sandbox node:tsx src/index.ts",
+    "dev:simple": "electron .",
+    "build": "tsc -p tsconfig.build.json && node scripts/rename-cjs.cjs",
+    "start": "electron .",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json --noEmit",

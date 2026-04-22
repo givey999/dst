@@ -5,7 +5,7 @@
   "type": "module",
   "main": "dist/index.cjs",
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && node -e \"const fs=require('fs');fs.renameSync('dist/index.js','dist/index.cjs');try{fs.renameSync('dist/index.js.map','dist/index.cjs.map')}catch(e){}\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "echo 'no lint'"
   },
