@@ -1,0 +1,40 @@
+# deps
+node_modules/
+.pnpm-store/
+
+# build
+dist/
+release/
+out/
+
+# env / secrets
+.env
+.env.local
+.env.*.local
+*.keytar
+bot-token.txt
+
+# os
+Thumbs.db
+.DS_Store
+desktop.ini
+
+# ide
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# logs
+*.log
+pnpm-debug.log*
+
+# electron
+packages/**/dist/
+packages/**/build/
+
+# tests
+coverage/
+.vitest/
+
+# misc
+*.tsbuildinfo

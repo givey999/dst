@@ -1,0 +1,33 @@
+{
+  "name": "dst",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Encrypted infinite storage over Discord",
+  "author": "givey999 <bogdan.moldovan@gmail.com>",
+  "license": "UNLICENSED",
+  "type": "module",
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "packageManager": "pnpm@9.12.0",
+  "scripts": {
+    "dev": "pnpm --filter @dst/main dev",
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck",
+    "package": "pnpm build && electron-builder --config electron-builder.yml",
+    "package:portable": "pnpm build && electron-builder --config electron-builder.yml --win portable"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.0",
+    "electron": "^32.0.0",
+    "electron-builder": "^25.0.0",
+    "eslint": "^9.12.0",
+    "@typescript-eslint/eslint-plugin": "^8.8.0",
+    "@typescript-eslint/parser": "^8.8.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}
