@@ -1,0 +1,49 @@
+#app {
+  height: 100vh;
+  display: grid;
+  grid-template-rows: auto 1fr;
+}
+
+.titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  -webkit-app-region: drag;
+}
+
+.titlebar-title {
+  font-family: var(--mono);
+  font-size: 14px;
+  letter-spacing: 0.05em;
+  color: var(--fg-dim);
+}
+
+.titlebar-actions { display: flex; gap: 6px; -webkit-app-region: no-drag; }
+
+.icon-btn {
+  background: transparent;
+  border: none;
+  color: var(--fg-dim);
+  padding: 4px 8px;
+  cursor: pointer;
+}
+.icon-btn:hover { color: var(--fg); }
+
+.view { position: relative; overflow: hidden; }
+.loading { padding: 24px; color: var(--fg-dim); }
+
+.drop-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(122, 162, 255, 0.08);
+  border: 2px dashed var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  color: var(--accent);
+  pointer-events: none;
+  z-index: 100;
+}

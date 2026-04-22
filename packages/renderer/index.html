@@ -5,12 +5,23 @@
     <title>dst</title>
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; script-src 'self'; connect-src 'none';">
     <link rel="stylesheet" href="css/theme.css" />
+    <link rel="stylesheet" href="css/layout.css" />
   </head>
   <body>
     <div id="app">
-      <h1>dst</h1>
-      <p id="status">booting…</p>
+      <header class="titlebar">
+        <span class="titlebar-title">dst</span>
+        <div class="titlebar-actions">
+          <button id="btn-lock" class="icon-btn" title="lock">lock</button>
+          <button id="btn-settings" class="icon-btn" title="settings">⚙</button>
+        </div>
+      </header>
+
+      <main id="view" class="view">
+        <div class="loading">loading…</div>
+      </main>
     </div>
+
     <script type="module" src="js/app.js"></script>
   </body>
 </html>
