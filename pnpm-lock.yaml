@@ -7,6 +7,19 @@ settings:
 importers:
 
   .:
+    dependencies:
+      argon2:
+        specifier: ^0.41.1
+        version: 0.41.1
+      discord.js:
+        specifier: ^14.16.0
+        version: 14.26.3
+      eventemitter3:
+        specifier: ^5.0.1
+        version: 5.0.4
+      keytar:
+        specifier: ^7.9.0
+        version: 7.9.0
     devDependencies:
       '@types/node':
         specifier: ^22.7.0

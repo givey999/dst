@@ -1,6 +1,7 @@
 appId: zip.givey.dst
 productName: dst
 copyright: "Copyright (c) 2026 givey999"
+npmRebuild: false
 directories:
   output: release
   buildResources: build
@@ -13,7 +14,19 @@ files:
   - packages/renderer/css/**/*
   - packages/renderer/js/**/*
   - packages/renderer/assets/**/*
-  - "!**/node_modules/**/*"
+  - packages/*/package.json
+  - package.json
+  - node_modules/**/*
+  - "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}"
+  - "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}"
+  - "!**/node_modules/*.d.ts"
+  - "!**/node_modules/.bin"
+  - "!**/*.{iml,hprof,orig,pyc,pyo,rbc,swp,csproj,sln,xproj}"
+  - "!**/._*"
+  - "!**/{.DS_Store,.git,.hg,.svn,CVS,RCS,SCCS,.gitignore,.gitattributes}"
+  - "!**/{__pycache__,thumbs.db,.flowconfig,.idea,.vs,.nyc_output}"
+  - "!**/{appveyor.yml,.travis.yml,circle.yml}"
+  - "!**/{npm-debug.log,yarn.lock,.yarn-integrity,.yarn-metadata.json}"
   - "!**/*.map"
   - "!**/*.tsbuildinfo"
 

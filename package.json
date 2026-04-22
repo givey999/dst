@@ -20,6 +20,12 @@
     "package": "pnpm build && electron-builder --config electron-builder.yml",
     "package:portable": "pnpm build && electron-builder --config electron-builder.yml --win portable"
   },
+  "dependencies": {
+    "argon2": "^0.41.1",
+    "discord.js": "^14.16.0",
+    "eventemitter3": "^5.0.1",
+    "keytar": "^7.9.0"
+  },
   "devDependencies": {
     "@types/node": "^22.7.0",
     "electron": "^32.0.0",
