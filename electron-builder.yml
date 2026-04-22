@@ -1,0 +1,37 @@
+appId: zip.givey.dst
+productName: dst
+copyright: "Copyright (c) 2026 givey999"
+directories:
+  output: release
+  buildResources: build
+
+files:
+  - packages/main/dist/**/*
+  - packages/preload/dist/**/*
+  - packages/shared/dist/**/*
+  - packages/renderer/index.html
+  - packages/renderer/css/**/*
+  - packages/renderer/js/**/*
+  - packages/renderer/assets/**/*
+  - "!**/node_modules/**/*"
+  - "!**/*.map"
+  - "!**/*.tsbuildinfo"
+
+asarUnpack:
+  - "**/argon2/**/*"
+  - "**/keytar/**/*"
+  - "**/@mapbox/node-pre-gyp/**/*"
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: portable
+      arch: [x64]
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+
+publish: null

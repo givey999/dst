@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Encrypted infinite storage over Discord",
+  "main": "packages/main/dist/index.js",
   "author": "givey999 <bogdan.moldovan@gmail.com>",
   "license": "UNLICENSED",
   "type": "module",
