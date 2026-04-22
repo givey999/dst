@@ -32,7 +32,7 @@ export class ChunkerService {
       const end = Math.min(start + chunkSize, full.length);
       const data = full.subarray(start, end);
       const header = this.buildHeader(i, total);
-      yield { seq: i, data: Buffer.from(data), header };
+      yield { seq: i, data, header };
     }
   }
 
