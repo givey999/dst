@@ -60,7 +60,10 @@ export type IpcRequest =
   | { type: "vault.download"; fileId: string; destPath: string }
   | { type: "vault.delete"; fileId: string }
   | { type: "vault.changePassphrase"; oldP: string; newP: string }
-  | { type: "vault.garbageCollect" };
+  | { type: "vault.garbageCollect" }
+  | { type: "setup.listBotGuilds" }
+  | { type: "setup.initBotAndGuild"; guildId: string }
+  | { type: "setup.checkVaultExists" };
 
 export type IpcResponse<T = unknown> =
   | { ok: true; data: T }

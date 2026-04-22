@@ -118,6 +118,18 @@ export function registerIpc(app: AppState): void {
         case "vault.garbageCollect":
           // Stub until Task 17
           return ok({ orphans: 0, reclaimedBytes: 0 });
+
+        case "setup.listBotGuilds":
+          return ok(await app.discord.listGuilds());
+
+        case "setup.initBotAndGuild":
+          await app.initAfterGuildPicked(req.guildId);
+          return ok(null);
+
+        case "setup.checkVaultExists": {
+          const header = await app.fetchVaultHeader();
+          return ok({ exists: Boolean(header) });
+        }
       }
     } catch (e) {
       const err = e as Error;
