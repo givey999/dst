@@ -59,6 +59,15 @@ export class IndexService {
     return this.index;
   }
 
+  getHeader(): Buffer {
+    if (!this.header) throw new Error("no header loaded");
+    return this.header;
+  }
+
+  setHeader(newHeader: Buffer): void {
+    this.header = newHeader;
+  }
+
   lastMessageIdOnDisk(): string | null {
     return this.lastMessageId;
   }

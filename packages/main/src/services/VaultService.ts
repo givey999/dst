@@ -79,6 +79,16 @@ export class VaultService {
     this.unlocked = false;
   }
 
+  async changePassphrase(oldP: string, newP: string): Promise<void> {
+    this.requireUnlocked();
+    const currentHeader = this.index.getHeader();
+    const newHeader = await this.crypto.rewrap(currentHeader, oldP, newP);
+    this.index.setHeader(newHeader);
+    // Refresh the in-memory vaultKey using the new header path.
+    this.vaultKey = await this.crypto.unlockVault(newHeader, newP);
+    await this.index.save();
+  }
+
   isUnlocked(): boolean {
     return this.unlocked;
   }
