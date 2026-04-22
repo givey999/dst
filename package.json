@@ -6,7 +6,6 @@
   "main": "packages/main/dist/index.js",
   "author": "givey999 <bogdan.moldovan@gmail.com>",
   "license": "UNLICENSED",
-  "type": "module",
   "engines": {
     "node": ">=20.0.0",
     "pnpm": ">=9.0.0"
