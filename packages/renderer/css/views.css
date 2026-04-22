@@ -86,3 +86,15 @@
 .file-action-btn { background: transparent; border: none; color: var(--fg-dim); padding: 4px 8px; font-size: 12px; cursor: pointer; }
 .file-action-btn:hover { color: var(--fg); }
 .file-action-btn.danger:hover { color: var(--danger); }
+
+.uploads { padding: 16px; overflow-y: auto; height: 100%; }
+.upload-row { display: grid; grid-template-rows: auto auto; gap: 4px; padding: 12px; border-bottom: 1px solid var(--border); }
+.upload-top { display: flex; justify-content: space-between; font-size: 13px; gap: 12px; }
+.upload-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.upload-state { color: var(--fg-dim); font-family: var(--mono); font-size: 12px; white-space: nowrap; }
+.upload-bar { height: 4px; background: var(--bg-elev); border-radius: 2px; overflow: hidden; }
+.upload-bar-fill { height: 100%; background: var(--accent); transition: width 80ms linear; }
+.upload-row.error .upload-bar-fill { background: var(--danger); }
+.upload-row.done .upload-bar-fill { background: var(--ok); }
+.upload-row.error .upload-state { color: var(--danger); }
+.upload-row.done .upload-state { color: var(--ok); }
