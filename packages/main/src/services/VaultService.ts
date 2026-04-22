@@ -1,0 +1,371 @@
+import { EventEmitter } from "eventemitter3";
+import { promises as fs, createReadStream, createWriteStream } from "node:fs";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
+import { randomUUID } from "node:crypto";
+import path from "node:path";
+import type { CryptoService } from "./CryptoService.js";
+import type { ChunkerService } from "./ChunkerService.js";
+import type { IndexService, FileEntry, ChunkRef } from "./IndexService.js";
+
+interface DiscordOps {
+  uploadAttachment(channelId: string, data: Buffer, filename: string): Promise<{ messageId: string }>;
+  fetchAttachmentData(channelId: string, messageId: string): Promise<Buffer>;
+  deleteMessages(channelId: string, messageIds: string[]): Promise<void>;
+}
+
+export interface VaultServiceDeps {
+  crypto: CryptoService;
+  chunker: ChunkerService;
+  discord: DiscordOps;
+  index: IndexService;
+  filesChannelId: string;
+  chunkSize: number;
+}
+
+export interface UploadHandle {
+  uploadId: string;
+  events: EventEmitter;
+  cancel: () => void;
+  done: Promise<FileEntry>;
+}
+
+export interface DownloadHandle {
+  downloadId: string;
+  events: EventEmitter;
+  cancel: () => void;
+  done: Promise<void>;
+}
+
+const CONCURRENCY = 3;
+const INDEX_SAVE_DEBOUNCE_MS = 2_000;
+
+export class VaultService {
+  private crypto: CryptoService;
+  private chunker: ChunkerService;
+  private discord: DiscordOps;
+  private index: IndexService;
+  private filesChannelId: string;
+  private chunkSize: number;
+
+  private vaultKey: Buffer | null = null;
+  private unlocked = false;
+  private indexSaveTimer: NodeJS.Timeout | null = null;
+
+  constructor(deps: VaultServiceDeps) {
+    this.crypto = deps.crypto;
+    this.chunker = deps.chunker;
+    this.discord = deps.discord;
+    this.index = deps.index;
+    this.filesChannelId = deps.filesChannelId;
+    this.chunkSize = deps.chunkSize;
+  }
+
+  async unlock(passphrase: string, header: Buffer): Promise<void> {
+    this.vaultKey = await this.crypto.unlockVault(header, passphrase);
+    await this.index.load({ vaultKey: this.vaultKey, header });
+    this.unlocked = true;
+  }
+
+  lock(): void {
+    if (this.indexSaveTimer) {
+      clearTimeout(this.indexSaveTimer);
+      this.indexSaveTimer = null;
+    }
+    if (this.vaultKey) this.vaultKey.fill(0);
+    this.vaultKey = null;
+    this.unlocked = false;
+  }
+
+  isUnlocked(): boolean {
+    return this.unlocked;
+  }
+
+  list(): FileEntry[] {
+    this.requireUnlocked();
+    return this.index.current().files;
+  }
+
+  upload(localPath: string): UploadHandle {
+    this.requireUnlocked();
+    const uploadId = randomUUID();
+    const events = new EventEmitter();
+    let cancelled = false;
+
+    const done = (async (): Promise<FileEntry> => {
+      const stat = await fs.stat(localPath);
+      const name = path.basename(localPath);
+      const fileId = randomUUID();
+      const total = Math.max(1, Math.ceil(stat.size / this.chunkSize));
+      events.emit("progress", {
+        uploadId,
+        name,
+        bytesUploaded: 0,
+        total: stat.size,
+        chunksComplete: 0,
+        chunksTotal: total,
+        state: "uploading",
+      });
+
+      const stream = createReadStream(localPath, { highWaterMark: this.chunkSize });
+      const chunks: Array<{ seq: number; data: Buffer; header: Buffer }> = [];
+      for await (const c of this.chunker.split(stream, this.chunkSize)) {
+        chunks.push(c);
+      }
+
+      let chunksComplete = 0;
+      let bytesUploaded = 0;
+      const chunkRefs: ChunkRef[] = [];
+
+      const uploadOne = async (c: { seq: number; data: Buffer; header: Buffer }): Promise<ChunkRef> => {
+        if (cancelled) throw new Error("cancelled");
+        // vaultKey is guaranteed non-null: requireUnlocked() was called at entry of upload()
+        const ct = await this.crypto.encryptChunk(this.vaultKey!, {
+          fileId,
+          seq: c.seq,
+          totalChunks: total,
+          chunkHeader: c.header,
+          plaintext: c.data,
+        });
+        const framed = Buffer.concat([c.header, ct]);
+        const { messageId } = await this.discord.uploadAttachment(
+          this.filesChannelId,
+          framed,
+          `${fileId}-${c.seq}.bin`,
+        );
+        chunksComplete++;
+        bytesUploaded += c.data.length;
+        events.emit("progress", {
+          uploadId,
+          name,
+          bytesUploaded,
+          total: stat.size,
+          chunksComplete,
+          chunksTotal: total,
+          state: "uploading",
+        });
+        return { messageId, seq: c.seq, ciphertextSize: framed.length };
+      };
+
+      const queue = [...chunks];
+      const workers: Array<Promise<void>> = [];
+      for (let w = 0; w < CONCURRENCY; w++) {
+        workers.push(
+          (async () => {
+            while (queue.length > 0) {
+              const next = queue.shift();
+              if (!next) break;
+              const ref = await uploadOne(next);
+              chunkRefs.push(ref);
+            }
+          })(),
+        );
+      }
+      await Promise.all(workers);
+
+      chunkRefs.sort((a, b) => a.seq - b.seq);
+
+      const entry: FileEntry = {
+        id: fileId,
+        name,
+        size: stat.size,
+        mime: guessMime(name),
+        createdAt: new Date().toISOString(),
+        chunks: chunkRefs,
+        chunkSize: this.chunkSize,
+      };
+      this.index.addFile(entry);
+      this.scheduleIndexSave();
+      events.emit("progress", {
+        uploadId,
+        name,
+        bytesUploaded: stat.size,
+        total: stat.size,
+        chunksComplete: total,
+        chunksTotal: total,
+        state: "done",
+      });
+      return entry;
+    })();
+
+    done.catch((err: Error) => {
+      events.emit("progress", {
+        uploadId,
+        name: path.basename(localPath),
+        bytesUploaded: 0,
+        total: 0,
+        chunksComplete: 0,
+        chunksTotal: 0,
+        state: "error",
+        error: err.message,
+      });
+    });
+
+    return {
+      uploadId,
+      events,
+      cancel: () => {
+        cancelled = true;
+      },
+      done,
+    };
+  }
+
+  download(fileId: string, destPath: string): DownloadHandle {
+    this.requireUnlocked();
+    const downloadId = randomUUID();
+    const events = new EventEmitter();
+    let cancelled = false;
+
+    const done = (async (): Promise<void> => {
+      const file = this.index.findFile(fileId);
+      if (!file) throw new Error("file not found");
+
+      events.emit("progress", {
+        downloadId,
+        name: file.name,
+        bytesDownloaded: 0,
+        total: file.size,
+        state: "fetching",
+      });
+
+      const results = new Map<number, Buffer>();
+      const queue = [...file.chunks];
+      let bytesDownloaded = 0;
+
+      const downloadOne = async (ref: ChunkRef): Promise<void> => {
+        if (cancelled) throw new Error("cancelled");
+        const framed = await this.discord.fetchAttachmentData(this.filesChannelId, ref.messageId);
+        const chunkHeader = framed.subarray(0, 16);
+        const ct = framed.subarray(16);
+
+        // vaultKey is guaranteed non-null: requireUnlocked() was called at entry of download()
+        const pt = await this.crypto.decryptChunk(this.vaultKey!, {
+          fileId: file.id,
+          seq: ref.seq,
+          totalChunks: file.chunks.length,
+          chunkHeader,
+          ciphertext: ct,
+        });
+        results.set(ref.seq, pt);
+        bytesDownloaded += pt.length;
+        events.emit("progress", {
+          downloadId,
+          name: file.name,
+          bytesDownloaded,
+          total: file.size,
+          state: "decrypting",
+        });
+      };
+
+      const workers: Array<Promise<void>> = [];
+      for (let w = 0; w < CONCURRENCY; w++) {
+        workers.push(
+          (async () => {
+            while (queue.length > 0) {
+              const n = queue.shift();
+              if (!n) break;
+              await downloadOne(n);
+            }
+          })(),
+        );
+      }
+      await Promise.all(workers);
+
+      const ordered: Buffer[] = [];
+      for (let i = 0; i < file.chunks.length; i++) {
+        const p = results.get(i);
+        if (!p) throw new Error(`missing chunk seq ${i}`);
+        ordered.push(p);
+      }
+      const out = Buffer.concat(ordered);
+      await pipeline(Readable.from(out), createWriteStream(destPath));
+
+      events.emit("progress", {
+        downloadId,
+        name: file.name,
+        bytesDownloaded: file.size,
+        total: file.size,
+        state: "done",
+      });
+    })();
+
+    done.catch((err: Error) => {
+      events.emit("progress", {
+        downloadId,
+        name: "?",
+        bytesDownloaded: 0,
+        total: 0,
+        state: "error",
+        error: err.message,
+      });
+    });
+
+    return {
+      downloadId,
+      events,
+      cancel: () => {
+        cancelled = true;
+      },
+      done,
+    };
+  }
+
+  async delete(fileId: string): Promise<void> {
+    this.requireUnlocked();
+    const entry = this.index.findFile(fileId);
+    if (!entry) return;
+    const ids = entry.chunks.map((c) => c.messageId);
+    await this.discord.deleteMessages(this.filesChannelId, ids);
+    this.index.removeFile(fileId);
+    this.scheduleIndexSave();
+  }
+
+  async flush(): Promise<void> {
+    if (this.indexSaveTimer) {
+      clearTimeout(this.indexSaveTimer);
+      this.indexSaveTimer = null;
+      await this.index.save();
+    }
+  }
+
+  private scheduleIndexSave(): void {
+    if (this.indexSaveTimer) clearTimeout(this.indexSaveTimer);
+    this.indexSaveTimer = setTimeout(() => {
+      this.indexSaveTimer = null;
+      void this.index.save().catch(() => {
+        // swallow; UI will handle via next attempt / error event
+      });
+    }, INDEX_SAVE_DEBOUNCE_MS);
+  }
+
+  private requireUnlocked(): void {
+    if (!this.unlocked || !this.vaultKey) throw new Error("vault locked");
+  }
+}
+
+function guessMime(filename: string): string {
+  const ext = filename.split(".").pop()?.toLowerCase() ?? "";
+  const m: Record<string, string> = {
+    png: "image/png",
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    gif: "image/gif",
+    webp: "image/webp",
+    mp4: "video/mp4",
+    webm: "video/webm",
+    mkv: "video/x-matroska",
+    mp3: "audio/mpeg",
+    flac: "audio/flac",
+    wav: "audio/wav",
+    ogg: "audio/ogg",
+    pdf: "application/pdf",
+    txt: "text/plain",
+    md: "text/markdown",
+    json: "application/json",
+    zip: "application/zip",
+    rar: "application/vnd.rar",
+    "7z": "application/x-7z-compressed",
+  };
+  return m[ext] ?? "application/octet-stream";
+}
