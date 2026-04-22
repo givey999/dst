@@ -30,6 +30,17 @@ describe("CryptoService.createVault / unlockVault", () => {
     expect(unwrappedNew).toEqual(vaultKey);
     await expect(svc.unlockVault(h2, PASSPHRASE)).rejects.toThrow();
   });
+
+  it("rewrap is idempotent across multiple passphrase changes", async () => {
+    const { header: h1, vaultKey } = await svc.createVault(PASSPHRASE);
+    const h2 = await svc.rewrap(h1, PASSPHRASE, "second");
+    const h3 = await svc.rewrap(h2, "second", "third");
+    const h4 = await svc.rewrap(h3, "third", "fourth");
+
+    expect(await svc.unlockVault(h4, "fourth")).toEqual(vaultKey);
+    await expect(svc.unlockVault(h4, "third")).rejects.toThrow();
+    await expect(svc.unlockVault(h4, PASSPHRASE)).rejects.toThrow();
+  });
 });
 
 describe("CryptoService.encryptJson / decryptJson", () => {
@@ -68,6 +79,25 @@ describe("CryptoService chunk encryption", () => {
       ciphertext: ct,
     });
     expect(pt).toEqual(plaintext);
+  });
+
+  it("round-trips an empty plaintext chunk", async () => {
+    const { vaultKey } = await svc.createVault(PASSPHRASE);
+    const ct = await svc.encryptChunk(vaultKey, {
+      fileId: "00000000-0000-0000-0000-000000000042",
+      seq: 0,
+      totalChunks: 1,
+      chunkHeader: Buffer.alloc(16, 0),
+      plaintext: Buffer.alloc(0),
+    });
+    const pt = await svc.decryptChunk(vaultKey, {
+      fileId: "00000000-0000-0000-0000-000000000042",
+      seq: 0,
+      totalChunks: 1,
+      chunkHeader: Buffer.alloc(16, 0),
+      ciphertext: ct,
+    });
+    expect(pt.length).toBe(0);
   });
 
   it("rejects cross-file splicing (wrong fileId in AAD)", async () => {
@@ -110,5 +140,18 @@ describe("CryptoService chunk encryption", () => {
         ciphertext: ct,
       }),
     ).rejects.toThrow();
+  });
+
+  it("rejects non-UUID fileId", async () => {
+    const { vaultKey } = await svc.createVault(PASSPHRASE);
+    await expect(
+      svc.encryptChunk(vaultKey, {
+        fileId: "not-a-valid-uuid",
+        seq: 0,
+        totalChunks: 1,
+        chunkHeader: Buffer.alloc(16, 0),
+        plaintext: Buffer.from("x"),
+      }),
+    ).rejects.toThrow(/invalid fileId/i);
   });
 });

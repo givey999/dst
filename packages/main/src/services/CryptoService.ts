@@ -68,6 +68,11 @@ export class CryptoService {
     }
   }
 
+  /**
+   * Re-wraps the vaultKey under a new passphrase-derived masterKey.
+   * Used by VaultService.changePassphrase — the vaultKey itself is preserved,
+   * so no chunks need re-encryption.
+   */
   async rewrap(oldHeader: Buffer, oldPassphrase: string, newPassphrase: string): Promise<Buffer> {
     const vaultKey = await this.unlockVault(oldHeader, oldPassphrase);
     const salt = randomBytes(16);
@@ -135,8 +140,12 @@ export class CryptoService {
   }
 
   private deriveChunkKey(vaultKey: Buffer, fileId: string, seq: number): Buffer {
+    const hex = fileId.replace(/-/g, "");
+    if (!/^[0-9a-f]{32}$/i.test(hex)) {
+      throw new Error(`invalid fileId (expected uuid): ${fileId}`);
+    }
     const salt = Buffer.concat([
-      Buffer.from(fileId.replace(/-/g, ""), "hex"),
+      Buffer.from(hex, "hex"),
       this.u32BE(seq),
     ]);
     const info = Buffer.from("dst/chunk/v1", "utf8");
