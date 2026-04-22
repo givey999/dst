@@ -2,41 +2,96 @@
 
 Encrypted infinite storage over Discord.
 
-See `docs/superpowers/specs/2026-04-22-dst-design.md` for the full design.
+## What it does
+
+Turns a private Discord server into your personal encrypted vault. Drag a file in — it's split into AES-256-GCM-encrypted chunks, uploaded as attachments by your bot, and indexed via an encrypted pinned message. Install on any PC with the same bot token + passphrase and your files are there.
+
+Zero-knowledge: Discord sees only ciphertext and one encrypted index blob. Filenames included.
+
+## Who this is for
+
+A personal tool for one human. Not a product, not for public distribution. Using Discord as a storage backend is a gray area of Discord's ToS — don't be loud about it.
 
 ## Requirements
 
-- Node.js 20+
-- pnpm 9+
+- Windows 10+
 - A Discord account
+- 5 minutes for first-run setup
+- For building: Node.js 20+, pnpm 9+, Windows Developer Mode enabled (Settings → For Developers → Developer Mode → On) so electron-builder can extract symlinks.
+
+## Install (end user)
+
+Download the latest `dst Setup x.y.z.exe` or `dst-x.y.z.exe` (portable) from your own build output (`release/`).
+
+Windows SmartScreen will warn on first launch (the installer isn't code-signed). Click "More info" → "Run anyway."
+
+First launch drops you into a 5-step setup wizard that creates the Discord bot and server for you.
 
 ## Dev
 
 ```bash
 pnpm install
-pnpm dev
+pnpm --filter @dst/shared build
+pnpm --filter @dst/preload build
+pnpm --filter @dst/main build
+pnpm --filter @dst/main start
+```
+
+During development you can also run:
+
+```bash
+pnpm test         # 36 unit tests
+pnpm typecheck    # all packages
+pnpm lint         # main package eslint
 ```
 
 ## Package
 
 ```bash
-pnpm package            # NSIS installer + portable
+pnpm package            # NSIS installer + portable, Windows x64
 pnpm package:portable   # portable only
 ```
 
-## Test
+Artifacts appear in `release/`. First build downloads Electron binaries (~2-5 minutes).
+
+## Integration tests
+
+Optional, require a throwaway bot + server:
 
 ```bash
-pnpm test
-pnpm typecheck
+DST_E2E_TOKEN=<bot-token> DST_E2E_GUILD_ID=<guild-id> pnpm --filter @dst/main test:e2e
 ```
 
-Integration tests against a real Discord server are gated behind `DST_E2E_TOKEN`:
+## Architecture
 
-```bash
-DST_E2E_TOKEN=your.bot.token DST_E2E_GUILD_ID=123 pnpm test
-```
+- **Electron main** (`packages/main`): services (CryptoService, ChunkerService, DiscordClient, IndexService, VaultService) + IPC handlers.
+- **Preload** (`packages/preload`): typed `window.dst` bridge via `contextBridge`.
+- **Renderer** (`packages/renderer`): vanilla HTML/CSS/ESM JS — no framework.
+- **Shared** (`packages/shared`): IPC request/response type definitions.
+
+### Encryption
+
+Argon2id(passphrase, salt) → masterKey. masterKey wraps a random vaultKey (AES-256-GCM). Per-chunk keys derive from vaultKey via HKDF-SHA-256. Each chunk is AES-256-GCM encrypted with AAD binding `{ fileId, seq, totalChunks, chunkHeader }`. The index itself is also AES-256-GCM encrypted with the vaultKey.
+
+Changing your passphrase rewraps the vaultKey in milliseconds — no chunks are re-encrypted.
+
+See `docs/superpowers/specs/2026-04-22-dst-design.md` for the full design spec.
+
+## Back up your secrets
+
+The only two secrets worth backing up:
+
+1. **Bot token** (stored at runtime in the OS keychain; re-paste in the wizard on a fresh install).
+2. **Passphrase** (never stored anywhere; write it down on paper).
+
+Losing the passphrase = files are gone forever. Losing the bot token = create a new bot and re-invite it to the same server.
+
+## Testing
+
+- 36 unit tests across `@dst/main` covering crypto, chunking, indexing, and vault orchestration.
+- 1 gated end-to-end test for DiscordClient (requires real bot + server + `DST_E2E_GATE=1`).
+- Manual test checklist: `docs/manual-test.md`.
 
 ## License
 
-UNLICENSED — personal project, not for distribution.
+UNLICENSED — personal project.
