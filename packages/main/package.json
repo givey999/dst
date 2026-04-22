@@ -13,6 +13,7 @@
     "lint": "eslint src --ext .ts"
   },
   "dependencies": {
+    "@dst/shared": "workspace:*",
     "argon2": "^0.41.1",
     "discord.js": "^14.16.0",
     "eventemitter3": "^5.0.1",

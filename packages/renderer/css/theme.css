@@ -1,0 +1,33 @@
+:root {
+  --bg: #0b0b0f;
+  --bg-elev: #13131a;
+  --fg: #e8e8ef;
+  --fg-dim: #8a8a99;
+  --accent: #7aa2ff;
+  --danger: #ff6b7a;
+  --ok: #6bd49a;
+  --border: #2a2a36;
+  --radius: 8px;
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font);
+  font-size: 14px;
+  user-select: none;
+  overflow: hidden;
+}
+
+#app {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
