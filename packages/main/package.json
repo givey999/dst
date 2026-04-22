@@ -9,6 +9,7 @@
     "build": "tsc -p tsconfig.build.json",
     "start": "electron .",
     "test": "vitest run",
+    "test:e2e": "DST_E2E_GATE=1 vitest run -c vitest.e2e.config.ts",
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src --ext .ts"
