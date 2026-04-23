@@ -104,4 +104,8 @@ Losing the passphrase = files are gone forever. Losing the bot token = create a 
 
 ## License
 
-UNLICENSED — personal project.
+**Polyform Noncommercial 1.0.0** — source-available, non-commercial only.
+
+You may read the source, fork it, modify it, and run dst for personal / research / non-profit purposes. You may **not** sell dst, host it as a paid service, or use it for any commercial purpose without a separate license from the author.
+
+See [`LICENSE`](./LICENSE) for the full terms and plain-language summary.
