@@ -9,3 +9,4 @@ export const onDownloadProgress = window.dst.onDownloadProgress;
 export const showSaveDialog = window.dst.showSaveDialog;
 export const showOpenDialog = window.dst.showOpenDialog;
 export const openExternal = window.dst.openExternal;
+export const getPathForFile = window.dst.getPathForFile;

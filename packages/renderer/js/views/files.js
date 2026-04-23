@@ -1,4 +1,4 @@
-import { rpc, showSaveDialog, showOpenDialog, onUploadProgress, onDownloadProgress } from "../ipc.js";
+import { rpc, showSaveDialog, showOpenDialog, onUploadProgress, onDownloadProgress, getPathForFile } from "../ipc.js";
 import { confirmDialog } from "../ui/confirm.js";
 import { toast } from "../ui/toast.js";
 
@@ -350,8 +350,22 @@ export async function files(root) {
   root.addEventListener("drop", async (e) => {
     e.preventDefault();
     setOverlay(false);
+
+    const paths = [];
     for (const file of e.dataTransfer.files) {
-      if (file.path) await doUpload(file.path);
+      // Prefer webUtils.getPathForFile (Electron 32+ way). Fall back to
+      // file.path (deprecated but sometimes still populated) to be resilient.
+      const p = getPathForFile(file) ?? file.path ?? null;
+      if (p) paths.push(p);
+    }
+
+    if (paths.length === 0) {
+      toast.error("couldn't read dropped file(s) — check the console");
+      return;
+    }
+
+    for (const p of paths) {
+      await doUpload(p);
     }
   });
 

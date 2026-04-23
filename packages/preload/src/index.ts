@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type { IpcRequest, IpcResponse } from "@dst/shared";
 
 const api = {
@@ -25,6 +25,16 @@ const api = {
 
   openExternal: (url: string): Promise<void> =>
     ipcRenderer.invoke("dst:openExternal", url) as Promise<void>,
+
+  // Electron 32 deprecated File.path; webUtils.getPathForFile is the replacement.
+  // Returns the filesystem path for a File object that came from a drop event.
+  getPathForFile: (file: File): string | null => {
+    try {
+      return webUtils.getPathForFile(file) || null;
+    } catch {
+      return null;
+    }
+  },
 };
 
 contextBridge.exposeInMainWorld("dst", api);
