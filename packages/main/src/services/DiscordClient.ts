@@ -1,5 +1,17 @@
-import { Client, GatewayIntentBits, AttachmentBuilder, ChannelType } from "discord.js";
+import { Client, GatewayIntentBits, AttachmentBuilder, ChannelType, PermissionFlagsBits } from "discord.js";
 import type { TextChannel, Message } from "discord.js";
+
+// Wrap a Discord API call so errors say which operation failed.
+// discord.js usually throws DiscordAPIError with .code (like 50013) and .message ("Missing Permissions").
+async function discordOp<T>(label: string, fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (e) {
+    const err = e as { message?: string; code?: number | string };
+    const code = err.code != null ? ` [code=${err.code}]` : "";
+    throw new Error(`${label} failed: ${err.message ?? String(e)}${code}`);
+  }
+}
 
 export interface UploadResult {
   messageId: string;
@@ -65,14 +77,52 @@ export class DiscordClient {
 
   async findOrCreateTextChannel(guildId: string, name: string): Promise<string> {
     this.requireClient();
-    const g = await this.client!.guilds.fetch(guildId);
+    const g = await discordOp(`fetchGuild(${guildId})`, () => this.client!.guilds.fetch(guildId));
     const existing = g.channels.cache.find((c) => c.name === name && c.type === ChannelType.GuildText);
-    if (existing) return existing.id;
+    const botId = this.client!.user!.id;
 
-    const created = await g.channels.create({
-      name,
-      type: ChannelType.GuildText,
-    });
+    // Explicit permission overrides guarantee the bot has what it needs on this channel,
+    // regardless of role-level permissions, OAuth uncheckings, or later role edits.
+    const botAllow = [
+      PermissionFlagsBits.ViewChannel,
+      PermissionFlagsBits.SendMessages,
+      PermissionFlagsBits.AttachFiles,
+      PermissionFlagsBits.ReadMessageHistory,
+      PermissionFlagsBits.ManageMessages,
+      PermissionFlagsBits.ManageChannels,
+    ];
+
+    if (existing) {
+      // Try to ensure the bot's overrides on a pre-existing channel; best-effort,
+      // since editing existing channel overrides requires MANAGE_ROLES (which we
+      // don't ask for in the OAuth invite). Swallow the error if we lack it —
+      // the subsequent operation will fail with its own labeled error if needed.
+      await (existing as TextChannel).permissionOverwrites
+        .edit(botId, {
+          ViewChannel: true,
+          SendMessages: true,
+          AttachFiles: true,
+          ReadMessageHistory: true,
+          ManageMessages: true,
+          ManageChannels: true,
+        })
+        .catch(() => void 0);
+      return existing.id;
+    }
+
+    const created = await discordOp(
+      `channels.create(${name})`,
+      () => g.channels.create({
+        name,
+        type: ChannelType.GuildText,
+        permissionOverwrites: [
+          {
+            id: botId,
+            allow: botAllow,
+          },
+        ],
+      }),
+    );
     return created.id;
   }
 
@@ -80,7 +130,7 @@ export class DiscordClient {
     this.requireClient();
     const ch = await this.channel(channelId);
     const att = new AttachmentBuilder(data, { name: filename });
-    const msg = await ch.send({ files: [att] });
+    const msg = await discordOp(`ch.send(${filename})`, () => ch.send({ files: [att] }));
     const attUrl = msg.attachments.first()?.url ?? null;
     if (!attUrl) throw new Error("upload succeeded but attachment URL missing");
     return { messageId: msg.id, attachmentUrl: attUrl };
@@ -89,7 +139,7 @@ export class DiscordClient {
   async fetchAttachmentUrl(channelId: string, messageId: string): Promise<string> {
     this.requireClient();
     const ch = await this.channel(channelId);
-    const msg = await ch.messages.fetch(messageId);
+    const msg = await discordOp(`messages.fetch(${messageId})`, () => ch.messages.fetch(messageId));
     const url = msg.attachments.first()?.url;
     if (!url) throw new Error(`no attachment on message ${messageId}`);
     return url;
@@ -134,15 +184,15 @@ export class DiscordClient {
 
     // Unpin first, then pin: avoids hitting Discord's 50-pins-per-channel cap
     // if the channel ever accumulated stale pins from crashes or manual edits.
-    const pins = await ch.messages.fetchPinned();
+    const pins = await discordOp("messages.fetchPinned", () => ch.messages.fetchPinned());
     for (const pinned of pins.values()) {
       if (pinned.id !== messageId) {
-        await pinned.unpin();
+        await discordOp(`unpin(${pinned.id})`, () => pinned.unpin());
       }
     }
 
-    const msg = await ch.messages.fetch(messageId);
-    await msg.pin();
+    const msg = await discordOp(`messages.fetch(${messageId})`, () => ch.messages.fetch(messageId));
+    await discordOp(`pin(${messageId})`, () => msg.pin());
   }
 
   async latestPinnedMessage(channelId: string): Promise<Message | null> {
