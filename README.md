@@ -4,9 +4,19 @@ Encrypted infinite storage over Discord.
 
 ## What it does
 
-Turns a private Discord server into your personal encrypted vault. Drag a file in — it's split into AES-256-GCM-encrypted chunks, uploaded as attachments by your bot, and indexed via an encrypted pinned message. Install on any PC with the same bot token + passphrase and your files are there.
+Turns a private Discord server into your personal encrypted vault. Drag a file in — it's split into AES-256-GCM-encrypted chunks, uploaded as attachments by your bot, and tracked in an encrypted index stored as the most recent message in the `#index` channel. Install on any PC with the same bot token + passphrase and your files are there.
 
 Zero-knowledge: Discord sees only ciphertext and one encrypted index blob. Filenames included.
+
+### Features
+
+- **Upload / download / delete** with per-file 3-parallel chunk workers and live progress in the Uploads tab.
+- **Folders** (including empty ones) — type any path like `photos/2024/` when creating.
+- **Rename** files inline. Click the row's `rename` button → type → Enter.
+- **Preview** any file — downloads to a temp dir and opens in your OS default app (image viewer, PDF reader, video player, editor, whatever). Temp copies are cleaned up on app close.
+- **Passphrase change** that rewraps the vaultKey in milliseconds without re-uploading any chunks.
+- **Second-machine portability** — wizard auto-detects existing vaults when you paste the same bot token.
+- **Dark UI** with custom confirm dialogs and toast notifications (no browser-native dialogs).
 
 ## Who this is for
 
@@ -40,7 +50,7 @@ pnpm --filter @dst/main start
 During development you can also run:
 
 ```bash
-pnpm test         # 36 unit tests
+pnpm test         # 41 unit tests
 pnpm typecheck    # all packages
 pnpm lint         # main package eslint
 ```
@@ -88,7 +98,7 @@ Losing the passphrase = files are gone forever. Losing the bot token = create a 
 
 ## Testing
 
-- 36 unit tests across `@dst/main` covering crypto, chunking, indexing, and vault orchestration.
+- 41 unit tests across `@dst/main` covering crypto, chunking, indexing, vault orchestration, folder handling, and the rename flow.
 - 1 gated end-to-end test for DiscordClient (requires real bot + server + `DST_E2E_GATE=1`).
 - Manual test checklist: `docs/manual-test.md`.
 
