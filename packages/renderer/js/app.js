@@ -42,6 +42,14 @@ async function bootstrap() {
 }
 
 document.getElementById("btn-lock").addEventListener("click", async () => {
+  // Gate states already have no vault to lock — skip the prompt.
+  if (currentRoute() === "wizard" || currentRoute() === "unlock") {
+    return;
+  }
+  const ok = confirm(
+    "Lock the vault?\n\nYou'll need to enter your passphrase again to see your files. Any in-progress uploads or downloads will be cancelled.",
+  );
+  if (!ok) return;
   await rpc({ type: "vault.lock" });
   const { unlock } = await import("./views/unlock.js");
   route("unlock", unlock);
