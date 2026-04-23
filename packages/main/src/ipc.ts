@@ -8,6 +8,21 @@ import type { AppState } from "./AppState.js";
 // Track temp files created for preview so we can delete them on quit.
 const previewTempFiles: string[] = [];
 
+// Recursively list every file path under dir, absolute.
+async function walkDirectory(dir: string): Promise<string[]> {
+  const out: string[] = [];
+  const entries = await fs.readdir(dir, { withFileTypes: true });
+  for (const entry of entries) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      out.push(...(await walkDirectory(full)));
+    } else if (entry.isFile()) {
+      out.push(full);
+    }
+  }
+  return out;
+}
+
 electronApp.on("will-quit", async () => {
   await Promise.all(
     previewTempFiles.map((p) => fs.unlink(p).catch(() => void 0)),
@@ -102,18 +117,54 @@ export function registerIpc(app: AppState): void {
 
         case "vault.upload": {
           if (!app.vault) throw new Error("vault not ready");
-          const handle = app.vault.upload(req.localPath, req.folderPrefix);
+          const stat = await fs.stat(req.localPath);
+
           const forward = (p: unknown): void => {
             evt.sender.send("dst:progress.upload", p);
           };
-          handle.events.on("progress", forward);
-          try {
-            const entry = await handle.done;
-            await app.vault.flush();
-            return ok(entry);
-          } finally {
-            handle.events.off("progress", forward);
+
+          if (stat.isFile()) {
+            const handle = app.vault.upload(req.localPath, req.folderPrefix);
+            handle.events.on("progress", forward);
+            try {
+              const entry = await handle.done;
+              await app.vault.flush();
+              return ok({ entries: [entry] });
+            } finally {
+              handle.events.off("progress", forward);
+            }
           }
+
+          if (stat.isDirectory()) {
+            // Dropped a folder — walk it and upload each file, preserving the
+            // relative folder structure as an in-vault path prefix.
+            const rootName = path.basename(req.localPath);
+            const files = await walkDirectory(req.localPath);
+            const entries = [];
+            for (const filePath of files) {
+              const rel = path.relative(req.localPath, filePath);
+              const relDir = path.dirname(rel).replace(/\\/g, "/");
+              const parts = [
+                req.folderPrefix ?? "",
+                rootName,
+                relDir === "." ? "" : relDir,
+              ].filter((s) => s.length > 0);
+              const prefix = parts.join("/");
+
+              const handle = app.vault.upload(filePath, prefix);
+              handle.events.on("progress", forward);
+              try {
+                const entry = await handle.done;
+                entries.push(entry);
+              } finally {
+                handle.events.off("progress", forward);
+              }
+            }
+            await app.vault.flush();
+            return ok({ entries });
+          }
+
+          throw new Error(`${req.localPath} is neither a file nor a directory`);
         }
 
         case "vault.download": {

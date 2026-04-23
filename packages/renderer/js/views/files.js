@@ -358,13 +358,18 @@ export async function files(root) {
   async function doUpload(localPath) {
     const baseName = localPath.split(/[\\/]/).pop() ?? localPath;
     try {
-      await rpc({
+      const result = await rpc({
         type: "vault.upload",
         localPath,
         folderPrefix: currentFolder || undefined,
       });
       await refresh();
-      toast.success(`Uploaded "${baseName}"`);
+      const count = result?.entries?.length ?? 1;
+      if (count === 1) {
+        toast.success(`Uploaded "${baseName}"`);
+      } else {
+        toast.success(`Uploaded ${count} files from "${baseName}"`);
+      }
     } catch (ex) {
       toast.error(`Upload failed: ${ex.message}`);
     }
