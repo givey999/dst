@@ -158,9 +158,11 @@ export async function wizard(root) {
     b.querySelector("[data-invite]").addEventListener("click", async () => {
       if (!state.botUser) return;
       const appId = state.botUser.id;
-      // permissions=109584: Manage Channels(16) + View Channels(1024) + Send Messages(2048)
-      //                    + Manage Messages(8192) + Attach Files(32768) + Read Message History(65536)
-      const url = `https://discord.com/oauth2/authorize?client_id=${appId}&permissions=109584&scope=bot`;
+      // permissions=268545040: Manage Channels(16) + View Channels(1024) + Send Messages(2048)
+      //                        + Manage Messages(8192) + Attach Files(32768)
+      //                        + Read Message History(65536) + Manage Roles(268435456)
+      // Manage Roles lets us set channel permission overrides on pre-existing channels.
+      const url = `https://discord.com/oauth2/authorize?client_id=${appId}&permissions=268545040&scope=bot`;
       const a = document.createElement("a");
       a.href = url;
       a.target = "_blank";
