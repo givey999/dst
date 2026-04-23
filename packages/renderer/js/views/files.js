@@ -1,5 +1,6 @@
-import { rpc, showSaveDialog, showOpenDialog } from "../ipc.js";
+import { rpc, showSaveDialog, showOpenDialog, onUploadProgress, onDownloadProgress } from "../ipc.js";
 import { confirmDialog } from "../ui/confirm.js";
+import { toast } from "../ui/toast.js";
 
 export async function files(root) {
   root.innerHTML = `
@@ -18,10 +19,34 @@ export async function files(root) {
   let allFolders = await rpc({ type: "vault.listFolders" });
   let filter = "";
   let currentFolder = ""; // "" = root. No leading or trailing slash.
+  const busyFileIds = new Set(); // ids currently being uploaded/downloaded
 
   const listEl = root.querySelector("[data-list]");
   const searchInput = root.querySelector("[data-search]");
   const breadcrumbEl = root.querySelector("[data-breadcrumb]");
+
+  // Subscribe to progress events so we can mark in-flight rows as busy.
+  // Progress for uploads doesn't include a fileId since the file isn't in the
+  // index yet, but we can match downloads against the file list by id — for
+  // uploads we just show general busy state elsewhere (Uploads tab).
+  const offDL = onDownloadProgress((p) => {
+    if (!p) return;
+    // Our DownloadProgress has `name` but not fileId — match by name against current list.
+    // Simpler: track any in-flight download name → set busy flag on that row.
+    // Since downloads are triggered by clicks in this view, we can reasonably pair.
+    // Skip for now — upload activity is visible in Uploads tab.
+  });
+  const offUL = onUploadProgress(() => {});
+
+  // Clean up listeners when this view is replaced.
+  const observer = new MutationObserver(() => {
+    if (!document.body.contains(root)) {
+      if (typeof offDL === "function") offDL();
+      if (typeof offUL === "function") offUL();
+      observer.disconnect();
+    }
+  });
+  observer.observe(root.parentNode || document.body, { childList: true, subtree: false });
 
   async function refresh() {
     allFiles = await rpc({ type: "vault.list" });
@@ -121,13 +146,15 @@ export async function files(root) {
   }
 
   function fileRowHtml(file, displayName) {
+    const busy = busyFileIds.has(file.id);
     return `
-      <div class="file-row" data-id="${file.id}">
-        <div class="file-name">${escapeHtml(displayName)}</div>
+      <div class="file-row ${busy ? "file-busy" : ""}" data-id="${file.id}">
+        <div class="file-name" data-display-name>${busy ? `<span class="file-busy-indicator"></span>` : `<span class="file-icon">${iconForFile(displayName)}</span>`}${escapeHtml(displayName)}</div>
         <div class="file-size">${humanSize(file.size)}</div>
         <div class="file-date">${humanDate(file.createdAt)}</div>
         <div class="file-actions">
           <button class="file-action-btn" data-preview>preview</button>
+          <button class="file-action-btn" data-rename>rename</button>
           <button class="file-action-btn" data-download>download</button>
           <button class="file-action-btn danger" data-delete>delete</button>
         </div>
@@ -222,8 +249,9 @@ export async function files(root) {
         try {
           await rpc({ type: "vault.deleteFolder", path: folderPath });
           await refresh();
+          toast.success(`Deleted folder "${folderPath}"`);
         } catch (ex) {
-          alert(`delete folder failed: ${ex.message}`);
+          toast.error(`Delete folder failed: ${ex.message}`);
         }
         return;
       }
@@ -234,21 +262,50 @@ export async function files(root) {
 
     const id = row.dataset.id;
     if (e.target.matches("[data-preview]")) {
+      busyFileIds.add(id);
+      render();
       try {
         await rpc({ type: "vault.preview", fileId: id });
       } catch (ex) {
-        alert(`preview failed: ${ex.message}`);
+        toast.error(`Preview failed: ${ex.message}`);
+      } finally {
+        busyFileIds.delete(id);
+        render();
       }
+    } else if (e.target.matches("[data-rename]")) {
+      const nameEl = row.querySelector("[data-display-name]");
+      const file = allFiles.find((f) => f.id === id);
+      if (!file || !nameEl) return;
+      const displayName = nameEl.textContent;
+      startInlineRename(nameEl, displayName, async (newDisplayName) => {
+        // Preserve the folder prefix — only the basename changes via rename.
+        const slashIdx = file.name.lastIndexOf("/");
+        const prefix = slashIdx >= 0 ? file.name.slice(0, slashIdx + 1) : "";
+        const newFullName = prefix + newDisplayName;
+        try {
+          await rpc({ type: "vault.rename", fileId: id, newName: newFullName });
+          await refresh();
+          toast.success(`Renamed to "${newDisplayName}"`);
+        } catch (ex) {
+          toast.error(`Rename failed: ${ex.message}`);
+        }
+      });
     } else if (e.target.matches("[data-download]")) {
       const file = allFiles.find((f) => f.id === id);
       if (!file) return;
       const suggested = file.name.split(/[\\/]/).pop() ?? file.name;
       const dest = await showSaveDialog(suggested);
       if (dest) {
+        busyFileIds.add(id);
+        render();
         try {
           await rpc({ type: "vault.download", fileId: id, destPath: dest });
+          toast.success(`Downloaded "${suggested}"`);
         } catch (ex) {
-          alert(`download failed: ${ex.message}`);
+          toast.error(`Download failed: ${ex.message}`);
+        } finally {
+          busyFileIds.delete(id);
+          render();
         }
       }
     } else if (e.target.matches("[data-delete]")) {
@@ -264,8 +321,9 @@ export async function files(root) {
       try {
         await rpc({ type: "vault.delete", fileId: id });
         await refresh();
+        toast.success(`Deleted "${name}"`);
       } catch (ex) {
-        alert(`delete failed: ${ex.message}`);
+        toast.error(`Delete failed: ${ex.message}`);
       }
     }
   });
@@ -298,6 +356,7 @@ export async function files(root) {
   });
 
   async function doUpload(localPath) {
+    const baseName = localPath.split(/[\\/]/).pop() ?? localPath;
     try {
       await rpc({
         type: "vault.upload",
@@ -305,10 +364,30 @@ export async function files(root) {
         folderPrefix: currentFolder || undefined,
       });
       await refresh();
+      toast.success(`Uploaded "${baseName}"`);
     } catch (ex) {
-      alert(`upload failed: ${ex.message}`);
+      toast.error(`Upload failed: ${ex.message}`);
     }
   }
+}
+
+function iconForFile(name) {
+  const ext = name.split(".").pop()?.toLowerCase() ?? "";
+  const map = {
+    png: "🖼️", jpg: "🖼️", jpeg: "🖼️", gif: "🖼️", webp: "🖼️", bmp: "🖼️", svg: "🖼️", ico: "🖼️",
+    mp4: "🎬", webm: "🎬", mkv: "🎬", mov: "🎬", avi: "🎬", wmv: "🎬",
+    mp3: "🎵", flac: "🎵", wav: "🎵", ogg: "🎵", m4a: "🎵", aac: "🎵",
+    pdf: "📕",
+    txt: "📄", md: "📝", rtf: "📄",
+    doc: "📘", docx: "📘",
+    xls: "📗", xlsx: "📗", csv: "📊",
+    ppt: "📙", pptx: "📙",
+    zip: "📦", rar: "📦", "7z": "📦", tar: "📦", gz: "📦", bz2: "📦",
+    exe: "⚙️", msi: "⚙️", dll: "⚙️", bin: "⚙️", iso: "💿",
+    js: "📜", ts: "📜", json: "📜", html: "📜", css: "📜", py: "📜", rb: "📜",
+    java: "📜", c: "📜", cpp: "📜", h: "📜", go: "📜", rs: "📜", sh: "📜",
+  };
+  return map[ext] ?? "📄";
 }
 
 function escapeHtml(s) {
@@ -320,6 +399,38 @@ function humanSize(n) {
   let i = 0;
   while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
   return `${n.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+}
+
+function startInlineRename(nameEl, current, onCommit) {
+  const inp = document.createElement("input");
+  inp.type = "text";
+  inp.value = current;
+  inp.className = "rename-input";
+  nameEl.replaceWith(inp);
+  inp.focus();
+  inp.setSelectionRange(0, current.lastIndexOf(".") > 0 ? current.lastIndexOf(".") : current.length);
+
+  let done = false;
+  const cancel = () => {
+    if (done) return;
+    done = true;
+    if (inp.parentNode) inp.replaceWith(nameEl);
+  };
+  const commit = () => {
+    if (done) return;
+    const v = inp.value.trim();
+    if (!v || v === current || v.includes("/")) {
+      cancel();
+      return;
+    }
+    done = true;
+    onCommit(v);
+  };
+  inp.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); commit(); }
+    else if (e.key === "Escape") { e.preventDefault(); cancel(); }
+  });
+  inp.addEventListener("blur", () => cancel());
 }
 
 function humanDate(iso) {

@@ -313,6 +313,13 @@ export class VaultService {
     };
   }
 
+  async rename(fileId: string, newName: string): Promise<void> {
+    this.requireUnlocked();
+    const updated = this.index.renameFile(fileId, newName);
+    if (!updated) throw new Error("file not found");
+    this.scheduleIndexSave();
+  }
+
   async delete(fileId: string): Promise<void> {
     this.requireUnlocked();
     const entry = this.index.findFile(fileId);

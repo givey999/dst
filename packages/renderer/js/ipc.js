@@ -8,3 +8,4 @@ export const onUploadProgress = window.dst.onUploadProgress;
 export const onDownloadProgress = window.dst.onDownloadProgress;
 export const showSaveDialog = window.dst.showSaveDialog;
 export const showOpenDialog = window.dst.showOpenDialog;
+export const openExternal = window.dst.openExternal;

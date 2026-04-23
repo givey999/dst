@@ -22,6 +22,9 @@ const api = {
 
   showOpenDialog: (): Promise<string | null> =>
     ipcRenderer.invoke("dst:showOpenDialog") as Promise<string | null>,
+
+  openExternal: (url: string): Promise<void> =>
+    ipcRenderer.invoke("dst:openExternal", url) as Promise<void>,
 };
 
 contextBridge.exposeInMainWorld("dst", api);

@@ -63,6 +63,7 @@ export type IpcRequest =
   | { type: "vault.download"; fileId: string; destPath: string }
   | { type: "vault.preview"; fileId: string }
   | { type: "vault.delete"; fileId: string }
+  | { type: "vault.rename"; fileId: string; newName: string }
   | { type: "vault.changePassphrase"; oldP: string; newP: string }
   | { type: "vault.garbageCollect" }
   | { type: "setup.listBotGuilds" }

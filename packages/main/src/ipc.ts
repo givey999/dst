@@ -167,6 +167,12 @@ export function registerIpc(app: AppState): void {
           await app.vault.flush();
           return ok(null);
 
+        case "vault.rename":
+          if (!app.vault) throw new Error("vault not ready");
+          await app.vault.rename(req.fileId, req.newName);
+          await app.vault.flush();
+          return ok(null);
+
         case "vault.changePassphrase": {
           if (!app.vault) throw new Error("vault not ready");
           await app.vault.changePassphrase(req.oldP, req.newP);
@@ -207,6 +213,16 @@ export function registerIpc(app: AppState): void {
     if (!win) return null;
     const res = await dialog.showOpenDialog(win, { properties: ["openFile"] });
     return res.canceled ? null : res.filePaths[0];
+  });
+
+  ipcMain.handle("dst:openExternal", async (_evt, url: string) => {
+    // Hard-restrict to http(s) and discord:// so we never shell.openExternal
+    // an arbitrary string from the renderer (e.g. file://, javascript:, etc.).
+    if (!/^(https?:|discord:)/.test(url)) {
+      throw new Error(`refusing to open non-http/discord url: ${url}`);
+    }
+    await shell.openExternal(url);
+    return null;
   });
 }
 

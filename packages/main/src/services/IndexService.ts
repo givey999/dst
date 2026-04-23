@@ -122,6 +122,18 @@ export class IndexService {
     return idx.files.find((f) => f.id === fileId) ?? null;
   }
 
+  renameFile(fileId: string, newName: string): FileEntry | null {
+    const idx = this.current();
+    const f = idx.files.find((x) => x.id === fileId);
+    if (!f) return null;
+    const clean = newName.replace(/^\/+|\/+$/g, "");
+    if (!clean) throw new Error("name must not be empty");
+    f.name = clean;
+    idx.updatedAt = new Date().toISOString();
+    idx.revision += 1;
+    return f;
+  }
+
   listFolders(): string[] {
     return this.current().folders ?? [];
   }

@@ -1,4 +1,4 @@
-import { rpc } from "../ipc.js";
+import { rpc, openExternal } from "../ipc.js";
 import { route, navigate } from "../router.js";
 
 export async function wizard(root) {
@@ -80,11 +80,7 @@ export async function wizard(root) {
       </div>
     `;
     b.querySelector("[data-open]").addEventListener("click", () => {
-      const a = document.createElement("a");
-      a.href = "https://discord.com/developers/applications";
-      a.target = "_blank";
-      a.rel = "noopener";
-      a.click();
+      openExternal("https://discord.com/developers/applications").catch(() => void 0);
     });
 
     const input = b.querySelector("[data-token]");
@@ -144,14 +140,10 @@ export async function wizard(root) {
     const status = b.querySelector("[data-status]");
 
     b.querySelector("[data-open-discord]").addEventListener("click", () => {
-      // discord:// is a custom protocol; fall back to web app if not handled.
-      window.location.href = "discord://";
+      // Prefer discord:// (opens the Discord app); fall back to the web app after a short delay.
+      openExternal("discord://").catch(() => void 0);
       setTimeout(() => {
-        const a = document.createElement("a");
-        a.href = "https://discord.com/app";
-        a.target = "_blank";
-        a.rel = "noopener";
-        a.click();
+        openExternal("https://discord.com/app").catch(() => void 0);
       }, 500);
     });
 
@@ -161,13 +153,8 @@ export async function wizard(root) {
       // permissions=268545040: Manage Channels(16) + View Channels(1024) + Send Messages(2048)
       //                        + Manage Messages(8192) + Attach Files(32768)
       //                        + Read Message History(65536) + Manage Roles(268435456)
-      // Manage Roles lets us set channel permission overrides on pre-existing channels.
       const url = `https://discord.com/oauth2/authorize?client_id=${appId}&permissions=268545040&scope=bot`;
-      const a = document.createElement("a");
-      a.href = url;
-      a.target = "_blank";
-      a.rel = "noopener";
-      a.click();
+      openExternal(url).catch(() => void 0);
     });
 
     // Start polling for new guild
