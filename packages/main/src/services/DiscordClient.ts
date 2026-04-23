@@ -193,7 +193,21 @@ export class DiscordClient {
     }
 
     const msg = await discordOp(`messages.fetch(${messageId})`, () => ch.messages.fetch(messageId));
-    await discordOp(`pin(${messageId})`, () => msg.pin());
+    try {
+      await msg.pin();
+    } catch (e) {
+      // On failure, dump the bot's effective channel permissions so we can see what Discord
+      // thinks. If ManageMessages IS in the list but pin still fails, the cause is almost
+      // always "Require 2FA for moderation actions" on the server combined with the bot
+      // owner's account not having 2FA.
+      const me = ch.guild.members.me;
+      const perms = me ? (ch.permissionsFor(me)?.toArray() ?? []) : [];
+      const err = e as { code?: number | string; message?: string };
+      const code = err.code != null ? ` [code=${err.code}]` : "";
+      throw new Error(
+        `pin(${messageId}) failed: ${err.message ?? String(e)}${code} | channel=${ch.name} | bot_perms=[${perms.join(",")}]`,
+      );
+    }
   }
 
   async latestPinnedMessage(channelId: string): Promise<Message | null> {
