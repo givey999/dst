@@ -1,4 +1,4 @@
-import { Client, GatewayIntentBits, AttachmentBuilder, ChannelType, PermissionFlagsBits } from "discord.js";
+import { Client, GatewayIntentBits, AttachmentBuilder, ChannelType, PermissionFlagsBits, OverwriteType } from "discord.js";
 import type { TextChannel, Message } from "discord.js";
 
 // Wrap a Discord API call so errors say which operation failed.
@@ -118,6 +118,7 @@ export class DiscordClient {
         permissionOverwrites: [
           {
             id: botId,
+            type: OverwriteType.Member,
             allow: botAllow,
           },
         ],
