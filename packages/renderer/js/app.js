@@ -1,6 +1,7 @@
 import { rpc } from "./ipc.js";
 import { route, navigate, currentRoute } from "./router.js";
 import { installGlobalProgressListeners } from "./views/uploads.js";
+import { confirmDialog } from "./ui/confirm.js";
 
 installGlobalProgressListeners();
 
@@ -46,9 +47,12 @@ document.getElementById("btn-lock").addEventListener("click", async () => {
   if (currentRoute() === "wizard" || currentRoute() === "unlock") {
     return;
   }
-  const ok = confirm(
-    "Lock the vault?\n\nYou'll need to enter your passphrase again to see your files. Any in-progress uploads or downloads will be cancelled.",
-  );
+  const ok = await confirmDialog({
+    title: "Lock the vault?",
+    message: "You'll need to enter your passphrase again to see your files. Any in-progress uploads or downloads will be cancelled.",
+    confirmLabel: "Lock",
+    cancelLabel: "Cancel",
+  });
   if (!ok) return;
   await rpc({ type: "vault.lock" });
   const { unlock } = await import("./views/unlock.js");

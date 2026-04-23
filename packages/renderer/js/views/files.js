@@ -1,4 +1,5 @@
 import { rpc, showSaveDialog, showOpenDialog } from "../ipc.js";
+import { confirmDialog } from "../ui/confirm.js";
 
 export async function files(root) {
   root.innerHTML = `
@@ -109,7 +110,9 @@ export async function files(root) {
         <div class="file-name">📁 ${escapeHtml(name)}</div>
         <div class="file-size"></div>
         <div class="file-date"></div>
-        <div class="file-actions"></div>
+        <div class="file-actions">
+          <button class="file-action-btn danger" data-delete-folder>delete</button>
+        </div>
       </div>
     `).join("");
 
@@ -201,6 +204,29 @@ export async function files(root) {
 
     if (row.classList.contains("folder-row")) {
       const folder = row.dataset.folder;
+      if (e.target.matches("[data-delete-folder]")) {
+        const folderPath = currentFolder === "" ? folder : currentFolder + "/" + folder;
+        const prefix = folderPath + "/";
+        const fileCount = allFiles.filter((f) => f.name.startsWith(prefix)).length;
+        const msg = fileCount === 0
+          ? `The folder "${folderPath}" is empty.`
+          : `The folder "${folderPath}" contains ${fileCount} file${fileCount === 1 ? "" : "s"}. They will all be permanently deleted.`;
+        const ok = await confirmDialog({
+          title: "Delete folder?",
+          message: msg + "\n\nThis can't be undone.",
+          confirmLabel: "Delete",
+          cancelLabel: "Cancel",
+          destructive: true,
+        });
+        if (!ok) return;
+        try {
+          await rpc({ type: "vault.deleteFolder", path: folderPath });
+          await refresh();
+        } catch (ex) {
+          alert(`delete folder failed: ${ex.message}`);
+        }
+        return;
+      }
       currentFolder = currentFolder === "" ? folder : currentFolder + "/" + folder;
       render();
       return;
@@ -227,7 +253,14 @@ export async function files(root) {
       }
     } else if (e.target.matches("[data-delete]")) {
       const name = row.querySelector(".file-name").textContent;
-      if (!confirm(`Delete "${name}"?`)) return;
+      const ok = await confirmDialog({
+        title: "Delete file?",
+        message: `"${name}" will be permanently deleted from your vault.\n\nThis can't be undone.`,
+        confirmLabel: "Delete",
+        cancelLabel: "Cancel",
+        destructive: true,
+      });
+      if (!ok) return;
       try {
         await rpc({ type: "vault.delete", fileId: id });
         await refresh();
