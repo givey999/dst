@@ -137,15 +137,38 @@ export async function files(root) {
   });
 
   root.querySelector("[data-new-folder]").addEventListener("click", () => {
-    const name = prompt("Folder name:");
-    if (!name) return;
-    const clean = name.trim().replace(/^\/+|\/+$/g, "");
-    if (!clean || clean.includes("/")) {
-      alert("Invalid folder name (no slashes, not empty).");
-      return;
-    }
-    currentFolder = currentFolder === "" ? clean : currentFolder + "/" + clean;
-    render();
+    // Electron disables window.prompt(), so use an inline input instead.
+    const btn = root.querySelector("[data-new-folder]");
+    const inp = document.createElement("input");
+    inp.type = "text";
+    inp.placeholder = "folder name — enter to create";
+    inp.className = "folder-input";
+    btn.replaceWith(inp);
+    inp.focus();
+
+    let committed = false;
+    const restore = () => {
+      if (committed) return;
+      committed = true;
+      // If the input is still in the DOM (wasn't replaced by a render), swap back to the button.
+      if (inp.parentNode) inp.replaceWith(btn);
+    };
+    const commit = () => {
+      if (committed) return;
+      const clean = inp.value.trim().replace(/^\/+|\/+$/g, "");
+      if (!clean || clean.includes("/")) {
+        restore();
+        return;
+      }
+      committed = true;
+      currentFolder = currentFolder === "" ? clean : currentFolder + "/" + clean;
+      render();
+    };
+    inp.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); commit(); }
+      else if (e.key === "Escape") { e.preventDefault(); restore(); }
+    });
+    inp.addEventListener("blur", () => restore());
   });
 
   root.addEventListener("click", async (e) => {
