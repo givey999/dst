@@ -14,6 +14,21 @@ async function bootstrap() {
     return;
   }
 
+  // Guild is set, but is there actually a usable vault? A half-completed Create
+  // Vault (e.g., upload ok but pin failed) leaves no pinned index — unlock would
+  // fail confusingly. Route such states back through the wizard's passphrase step.
+  try {
+    const vaultCheck = await rpc({ type: "setup.checkVaultExists" });
+    if (!vaultCheck.exists) {
+      const { wizard } = await import("./views/wizard.js");
+      route("wizard", wizard);
+      await navigate("wizard");
+      return;
+    }
+  } catch (_e) {
+    // best-effort — if the check itself fails, fall through to the unlock screen
+  }
+
   if (!status.unlocked) {
     const { unlock } = await import("./views/unlock.js");
     route("unlock", unlock);
