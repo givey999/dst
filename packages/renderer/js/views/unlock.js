@@ -31,8 +31,13 @@ export async function unlock(root) {
       const { files } = await import("./files.js");
       route("files", files);
       await navigate("files");
-    } catch (_ex) {
-      err.textContent = "wrong passphrase";
+    } catch (ex) {
+      const msg = (ex && ex.message) ? ex.message : "unlock failed";
+      if (/wrong passphrase|corrupted header/i.test(msg)) {
+        err.textContent = "wrong passphrase";
+      } else {
+        err.textContent = msg;
+      }
       input.select();
     }
   });
