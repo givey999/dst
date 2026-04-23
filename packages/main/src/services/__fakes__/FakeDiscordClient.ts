@@ -54,17 +54,21 @@ export class FakeDiscordClient extends EventEmitter {
     }
   }
 
-  async pinAndUnpinPrevious(channelId: string, messageId: string): Promise<void> {
+  async latestChannelMessageWithAttachment(channelId: string): Promise<{ id: string; attachmentData: Buffer } | null> {
     const arr = this.getChannel(channelId);
-    for (const m of arr) m.pinned = m.id === messageId;
-  }
-
-  async latestPinnedWithAttachment(channelId: string): Promise<{ id: string; attachmentData: Buffer } | null> {
-    const arr = this.getChannel(channelId);
-    const pinned = arr.filter((m) => m.pinned).sort((a, b) => b.createdAt - a.createdAt);
-    const p = pinned[0];
+    const sorted = [...arr].sort((a, b) => b.createdAt - a.createdAt);
+    const p = sorted[0];
     if (!p) return null;
     return { id: p.id, attachmentData: Buffer.from(p.attachment) };
+  }
+
+  async deleteOwnOlderMessages(channelId: string, keepId: string): Promise<void> {
+    const arr = this.getChannel(channelId);
+    // Fake assumes every message in the channel belongs to the "bot".
+    for (let i = arr.length - 1; i >= 0; i--) {
+      const item = arr[i];
+      if (item && item.id !== keepId) arr.splice(i, 1);
+    }
   }
 
   async listChannelMessageIds(channelId: string): Promise<string[]> {

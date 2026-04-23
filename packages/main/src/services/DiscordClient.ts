@@ -1,5 +1,5 @@
 import { Client, GatewayIntentBits, AttachmentBuilder, ChannelType, PermissionFlagsBits, OverwriteType } from "discord.js";
-import type { TextChannel, Message } from "discord.js";
+import type { TextChannel } from "discord.js";
 
 // Wrap a Discord API call so errors say which operation failed.
 // discord.js usually throws DiscordAPIError with .code (like 50013) and .message ("Missing Permissions").
@@ -179,51 +179,38 @@ export class DiscordClient {
     }
   }
 
-  async pinAndUnpinPrevious(channelId: string, messageId: string): Promise<void> {
+  // latestChannelMessageWithAttachment: returns the most-recent message in the channel
+  // that has an attachment. Used as the "current index" pointer instead of pins — Discord's
+  // pin API has been unreliable for bots in 2024/2025. "Most recent message" is a simpler
+  // invariant that depends on the bot being the only writer to the channel.
+  async latestChannelMessageWithAttachment(channelId: string): Promise<{ id: string; attachmentData: Buffer } | null> {
     this.requireClient();
     const ch = await this.channel(channelId);
-
-    // Unpin first, then pin: avoids hitting Discord's 50-pins-per-channel cap
-    // if the channel ever accumulated stale pins from crashes or manual edits.
-    const pins = await discordOp("messages.fetchPinned", () => ch.messages.fetchPinned());
-    for (const pinned of pins.values()) {
-      if (pinned.id !== messageId) {
-        await discordOp(`unpin(${pinned.id})`, () => pinned.unpin());
+    const messages = await discordOp("messages.fetch(limit=10)", () => ch.messages.fetch({ limit: 10 }));
+    // Walk newest-first and take the first message that has an attachment.
+    const sorted = [...messages.values()].sort((a, b) => b.createdTimestamp - a.createdTimestamp);
+    for (const m of sorted) {
+      if (m.attachments.size > 0) {
+        const data = await this.fetchAttachmentData(channelId, m.id);
+        return { id: m.id, attachmentData: data };
       }
     }
-
-    const msg = await discordOp(`messages.fetch(${messageId})`, () => ch.messages.fetch(messageId));
-    try {
-      await msg.pin();
-    } catch (e) {
-      // On failure, dump the bot's effective channel permissions so we can see what Discord
-      // thinks. If ManageMessages IS in the list but pin still fails, the cause is almost
-      // always "Require 2FA for moderation actions" on the server combined with the bot
-      // owner's account not having 2FA.
-      const me = ch.guild.members.me;
-      const perms = me ? (ch.permissionsFor(me)?.toArray() ?? []) : [];
-      const err = e as { code?: number | string; message?: string };
-      const code = err.code != null ? ` [code=${err.code}]` : "";
-      throw new Error(
-        `pin(${messageId}) failed: ${err.message ?? String(e)}${code} | channel=${ch.name} | bot_perms=[${perms.join(",")}]`,
-      );
-    }
+    return null;
   }
 
-  async latestPinnedMessage(channelId: string): Promise<Message | null> {
+  // deleteOwnOlderMessages: deletes every message in the channel authored by the bot,
+  // except the one identified by keepId. The bot can always delete its own messages
+  // without MANAGE_MESSAGES, so this works in channels where MANAGE_MESSAGES is blocked.
+  async deleteOwnOlderMessages(channelId: string, keepId: string): Promise<void> {
     this.requireClient();
     const ch = await this.channel(channelId);
-    const pins = await ch.messages.fetchPinned();
-    if (pins.size === 0) return null;
-    return pins.sort((a, b) => b.createdTimestamp - a.createdTimestamp).first() ?? null;
-  }
-
-  async latestPinnedWithAttachment(channelId: string): Promise<{ id: string; attachmentData: Buffer } | null> {
-    this.requireClient();
-    const latest = await this.latestPinnedMessage(channelId);
-    if (!latest) return null;
-    const data = await this.fetchAttachmentData(channelId, latest.id);
-    return { id: latest.id, attachmentData: data };
+    const botId = this.client!.user!.id;
+    const messages = await discordOp("messages.fetch(limit=50)", () => ch.messages.fetch({ limit: 50 }));
+    for (const m of messages.values()) {
+      if (m.id === keepId) continue;
+      if (m.author.id !== botId) continue;
+      await discordOp(`ownMsg.delete(${m.id})`, () => m.delete()).catch(() => void 0);
+    }
   }
 
   async listChannelMessageIds(channelId: string): Promise<string[]> {

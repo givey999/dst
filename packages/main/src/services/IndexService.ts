@@ -27,8 +27,8 @@ export interface VaultIndex {
 
 interface DiscordAttachmentReader {
   uploadAttachment(channelId: string, data: Buffer, filename: string): Promise<{ messageId: string; attachmentUrl: string }>;
-  pinAndUnpinPrevious(channelId: string, messageId: string): Promise<void>;
-  latestPinnedWithAttachment(channelId: string): Promise<{ id: string; attachmentData: Buffer } | null>;
+  latestChannelMessageWithAttachment(channelId: string): Promise<{ id: string; attachmentData: Buffer } | null>;
+  deleteOwnOlderMessages(channelId: string, keepId: string): Promise<void>;
   deleteMessages(channelId: string, messageIds: string[]): Promise<void>;
 }
 
@@ -81,8 +81,8 @@ export class IndexService {
   }
 
   async load(args: { vaultKey: Buffer; header: Buffer }): Promise<void> {
-    const latest = await this.discord.latestPinnedWithAttachment(this.indexChannelId);
-    if (!latest) throw new Error("no pinned index message");
+    const latest = await this.discord.latestChannelMessageWithAttachment(this.indexChannelId);
+    if (!latest) throw new Error("no index message in channel");
 
     if (latest.attachmentData.length < HEADER_SIZE) throw new Error("index blob too short");
     const body = latest.attachmentData.subarray(HEADER_SIZE);
@@ -123,7 +123,7 @@ export class IndexService {
     if (!this.index || !this.vaultKey || !this.header) throw new Error("nothing to save");
 
     if (!opts.force) {
-      const latest = await this.discord.latestPinnedWithAttachment(this.indexChannelId);
+      const latest = await this.discord.latestChannelMessageWithAttachment(this.indexChannelId);
       if (latest) {
         const body = latest.attachmentData.subarray(HEADER_SIZE);
         const remote = await this.crypto.decryptJson<VaultIndex>(this.vaultKey, body);
@@ -136,7 +136,9 @@ export class IndexService {
     const body = await this.crypto.encryptJson(this.vaultKey, this.index);
     const blob = Buffer.concat([this.header, body]);
     const { messageId } = await this.discord.uploadAttachment(this.indexChannelId, blob, "index.bin");
-    await this.discord.pinAndUnpinPrevious(this.indexChannelId, messageId);
+    // Best-effort cleanup of previous index messages. Bot can delete its own
+    // messages without MANAGE_MESSAGES, so this works even when pinning doesn't.
+    await this.discord.deleteOwnOlderMessages(this.indexChannelId, messageId).catch(() => void 0);
 
     this.lastRevisionOnDisk = this.index.revision;
     this.lastMessageId = messageId;

@@ -88,10 +88,10 @@ export class AppState {
 
   async fetchVaultHeader(): Promise<Buffer | null> {
     if (!this.indexChannelId) return null;
-    const pin = await this.discord.latestPinnedWithAttachment(this.indexChannelId);
-    if (!pin) return null;
-    if (pin.attachmentData.length < HEADER_SIZE) return null;
-    return pin.attachmentData.subarray(0, HEADER_SIZE);
+    const latest = await this.discord.latestChannelMessageWithAttachment(this.indexChannelId);
+    if (!latest) return null;
+    if (latest.attachmentData.length < HEADER_SIZE) return null;
+    return latest.attachmentData.subarray(0, HEADER_SIZE);
   }
 
   chunkSizeForTier(tier: 0 | 1 | 2 | 3): number {
