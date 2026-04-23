@@ -1,5 +1,5 @@
 import { rpc } from "./ipc.js";
-import { route, navigate } from "./router.js";
+import { route, navigate, currentRoute } from "./router.js";
 import { installGlobalProgressListeners } from "./views/uploads.js";
 
 installGlobalProgressListeners();
@@ -49,6 +49,17 @@ document.getElementById("btn-lock").addEventListener("click", async () => {
 });
 
 document.getElementById("btn-settings").addEventListener("click", async () => {
+  // Toggle: if we're on settings, go back to files; otherwise go to settings.
+  // (Only makes sense from the files view; wizard/unlock are gate states.)
+  if (currentRoute() === "settings") {
+    const { files } = await import("./views/files.js");
+    route("files", files);
+    await navigate("files");
+    return;
+  }
+  if (currentRoute() === "wizard" || currentRoute() === "unlock") {
+    return;
+  }
   const { settings } = await import("./views/settings.js");
   route("settings", settings);
   await navigate("settings");
