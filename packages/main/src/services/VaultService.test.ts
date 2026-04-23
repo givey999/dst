@@ -101,6 +101,30 @@ describe("VaultService", () => {
     expect(back.length).toBe(0);
   });
 
+  it("upload with folderPrefix stores path-qualified name", async () => {
+    const srcPath = await tmpFile(Buffer.from("foo"));
+    await svc.upload(srcPath, "photos/2024").done;
+    const files = svc.list();
+    expect(files.length).toBe(1);
+    expect(files[0]?.name.endsWith(".bin")).toBe(true);
+    expect(files[0]?.name.startsWith("photos/2024/")).toBe(true);
+  });
+
+  it("folderPrefix strips leading/trailing slashes", async () => {
+    const srcPath = await tmpFile(Buffer.from("bar"));
+    await svc.upload(srcPath, "/a/b/").done;
+    const files = svc.list();
+    expect(files[0]?.name.startsWith("a/b/")).toBe(true);
+    expect(files[0]?.name.startsWith("/")).toBe(false);
+  });
+
+  it("upload without folderPrefix stores bare basename", async () => {
+    const srcPath = await tmpFile(Buffer.from("baz"));
+    await svc.upload(srcPath).done;
+    const files = svc.list();
+    expect(files[0]?.name.includes("/")).toBe(false);
+  });
+
   it("garbage collect removes orphan chunks from #files", async () => {
     const srcPath = await tmpFile(Buffer.from("normal upload"));
     await svc.upload(srcPath).done;

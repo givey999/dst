@@ -1,6 +1,18 @@
-import { ipcMain, dialog, BrowserWindow } from "electron";
+import { ipcMain, dialog, BrowserWindow, app as electronApp, shell } from "electron";
+import { promises as fs } from "node:fs";
+import path from "node:path";
+import { randomUUID } from "node:crypto";
 import type { IpcRequest, IpcResponse, VaultStatus } from "@dst/shared";
 import type { AppState } from "./AppState.js";
+
+// Track temp files created for preview so we can delete them on quit.
+const previewTempFiles: string[] = [];
+
+electronApp.on("will-quit", async () => {
+  await Promise.all(
+    previewTempFiles.map((p) => fs.unlink(p).catch(() => void 0)),
+  );
+});
 
 export function registerIpc(app: AppState): void {
   ipcMain.handle("dst:rpc", async (evt, req: IpcRequest): Promise<IpcResponse> => {
@@ -74,7 +86,7 @@ export function registerIpc(app: AppState): void {
 
         case "vault.upload": {
           if (!app.vault) throw new Error("vault not ready");
-          const handle = app.vault.upload(req.localPath);
+          const handle = app.vault.upload(req.localPath, req.folderPrefix);
           const forward = (p: unknown): void => {
             evt.sender.send("dst:progress.upload", p);
           };
@@ -101,6 +113,36 @@ export function registerIpc(app: AppState): void {
           } finally {
             handle.events.off("progress", forward);
           }
+        }
+
+        case "vault.preview": {
+          if (!app.vault) throw new Error("vault not ready");
+          const file = app.vault.list().find((f) => f.id === req.fileId);
+          if (!file) throw new Error("file not found");
+
+          // Preserve the extension so the OS picks the right default app.
+          // Strip any path separators from the filename for a safe temp name.
+          const baseName = file.name.split(/[\\/]/).pop() ?? "preview";
+          const safeName = baseName.replace(/[<>:"|?*\x00-\x1f]/g, "_");
+          const tempDir = electronApp.getPath("temp");
+          const tempPath = path.join(tempDir, `dst-${randomUUID()}-${safeName}`);
+
+          const handle = app.vault.download(req.fileId, tempPath);
+          const forward = (p: unknown): void => {
+            evt.sender.send("dst:progress.download", p);
+          };
+          handle.events.on("progress", forward);
+          try {
+            await handle.done;
+          } finally {
+            handle.events.off("progress", forward);
+          }
+
+          previewTempFiles.push(tempPath);
+
+          const openErr = await shell.openPath(tempPath);
+          if (openErr) throw new Error(`open failed: ${openErr}`);
+          return ok(null);
         }
 
         case "vault.delete":

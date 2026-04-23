@@ -99,11 +99,13 @@ export class VaultService {
     return this.index.current().files;
   }
 
-  upload(localPath: string): UploadHandle {
+  upload(localPath: string, folderPrefix?: string): UploadHandle {
     this.requireUnlocked();
     const uploadId = randomUUID();
     const events = new EventEmitter();
-    const name = path.basename(localPath);
+    const baseName = path.basename(localPath);
+    const cleanPrefix = folderPrefix ? folderPrefix.replace(/^\/+|\/+$/g, "") : "";
+    const name = cleanPrefix ? `${cleanPrefix}/${baseName}` : baseName;
     let cancelled = false;
 
     // Hoisted so the error handler can report progress-at-failure.

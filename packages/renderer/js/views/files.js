@@ -5,35 +5,114 @@ export async function files(root) {
     <div class="files">
       <div class="files-toolbar">
         <input type="search" placeholder="search…" data-search />
+        <button data-new-folder title="Create folder">+ folder</button>
         <button class="primary" data-upload>Upload</button>
       </div>
+      <div class="files-breadcrumb" data-breadcrumb></div>
       <div class="files-list" data-list></div>
     </div>
   `;
 
   let allFiles = await rpc({ type: "vault.list" });
   let filter = "";
+  let currentFolder = ""; // "" = root. No leading or trailing slash.
 
-  const list = root.querySelector("[data-list]");
+  const listEl = root.querySelector("[data-list]");
   const searchInput = root.querySelector("[data-search]");
+  const breadcrumbEl = root.querySelector("[data-breadcrumb]");
 
-  function render() {
-    const filtered = allFiles.filter((f) => f.name.toLowerCase().includes(filter.toLowerCase()));
-    if (filtered.length === 0) {
-      list.innerHTML = `<div class="files-empty">${allFiles.length === 0 ? "no files yet — drop a file here or click Upload" : "no matches"}</div>`;
+  function listAtPath(files, prefix) {
+    const prefixSlash = prefix === "" ? "" : prefix + "/";
+    const folders = new Set();
+    const filesOut = [];
+    for (const f of files) {
+      if (prefixSlash && !f.name.startsWith(prefixSlash)) continue;
+      const rest = prefixSlash ? f.name.slice(prefixSlash.length) : f.name;
+      const slashIdx = rest.indexOf("/");
+      if (slashIdx < 0) {
+        filesOut.push({ ...f, displayName: rest });
+      } else {
+        folders.add(rest.slice(0, slashIdx));
+      }
+    }
+    return {
+      folders: [...folders].sort(),
+      files: filesOut.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)),
+    };
+  }
+
+  function renderBreadcrumb() {
+    if (currentFolder === "" && !filter) {
+      breadcrumbEl.innerHTML = "";
+      breadcrumbEl.style.display = "none";
       return;
     }
-    list.innerHTML = filtered.map((f) => `
-      <div class="file-row" data-id="${f.id}">
-        <div class="file-name">${escapeHtml(f.name)}</div>
-        <div class="file-size">${humanSize(f.size)}</div>
-        <div class="file-date">${humanDate(f.createdAt)}</div>
+    breadcrumbEl.style.display = "";
+    if (filter) {
+      breadcrumbEl.innerHTML = `<span class="crumb-search">search results for "${escapeHtml(filter)}"</span>`;
+      return;
+    }
+    const segments = currentFolder.split("/");
+    const parts = [`<span class="crumb" data-goto="">root</span>`];
+    let acc = "";
+    for (let i = 0; i < segments.length; i++) {
+      acc = i === 0 ? segments[0] : acc + "/" + segments[i];
+      parts.push(`<span class="crumb-sep">/</span><span class="crumb" data-goto="${escapeHtml(acc)}">${escapeHtml(segments[i])}</span>`);
+    }
+    breadcrumbEl.innerHTML = parts.join("");
+  }
+
+  function render() {
+    renderBreadcrumb();
+
+    // When searching, show a flat matching list across ALL folders.
+    if (filter) {
+      const f = filter.toLowerCase();
+      const matches = allFiles.filter((x) => x.name.toLowerCase().includes(f));
+      if (matches.length === 0) {
+        listEl.innerHTML = `<div class="files-empty">no matches</div>`;
+        return;
+      }
+      listEl.innerHTML = matches.map((x) => fileRowHtml(x, x.name)).join("");
+      return;
+    }
+
+    const { folders, files: filesHere } = listAtPath(allFiles, currentFolder);
+
+    if (folders.length === 0 && filesHere.length === 0) {
+      const hint = currentFolder === ""
+        ? "no files yet — drop a file here or click Upload"
+        : "empty folder";
+      listEl.innerHTML = `<div class="files-empty">${hint}</div>`;
+      return;
+    }
+
+    const folderRows = folders.map((name) => `
+      <div class="file-row folder-row" data-folder="${escapeHtml(name)}">
+        <div class="file-name">📁 ${escapeHtml(name)}</div>
+        <div class="file-size"></div>
+        <div class="file-date"></div>
+        <div class="file-actions"></div>
+      </div>
+    `).join("");
+
+    const fileRows = filesHere.map((x) => fileRowHtml(x, x.displayName)).join("");
+    listEl.innerHTML = folderRows + fileRows;
+  }
+
+  function fileRowHtml(file, displayName) {
+    return `
+      <div class="file-row" data-id="${file.id}">
+        <div class="file-name">${escapeHtml(displayName)}</div>
+        <div class="file-size">${humanSize(file.size)}</div>
+        <div class="file-date">${humanDate(file.createdAt)}</div>
         <div class="file-actions">
+          <button class="file-action-btn" data-preview>preview</button>
           <button class="file-action-btn" data-download>download</button>
           <button class="file-action-btn danger" data-delete>delete</button>
         </div>
       </div>
-    `).join("");
+    `;
   }
 
   render();
@@ -43,19 +122,55 @@ export async function files(root) {
     render();
   });
 
+  breadcrumbEl.addEventListener("click", (e) => {
+    const crumb = e.target.closest("[data-goto]");
+    if (!crumb) return;
+    currentFolder = crumb.dataset.goto;
+    filter = "";
+    searchInput.value = "";
+    render();
+  });
+
   root.querySelector("[data-upload]").addEventListener("click", async () => {
     const localPath = await showOpenDialog();
     if (localPath) await doUpload(localPath);
   });
 
+  root.querySelector("[data-new-folder]").addEventListener("click", () => {
+    const name = prompt("Folder name:");
+    if (!name) return;
+    const clean = name.trim().replace(/^\/+|\/+$/g, "");
+    if (!clean || clean.includes("/")) {
+      alert("Invalid folder name (no slashes, not empty).");
+      return;
+    }
+    currentFolder = currentFolder === "" ? clean : currentFolder + "/" + clean;
+    render();
+  });
+
   root.addEventListener("click", async (e) => {
     const row = e.target.closest(".file-row");
     if (!row) return;
+
+    if (row.classList.contains("folder-row")) {
+      const folder = row.dataset.folder;
+      currentFolder = currentFolder === "" ? folder : currentFolder + "/" + folder;
+      render();
+      return;
+    }
+
     const id = row.dataset.id;
-    if (e.target.matches("[data-download]")) {
+    if (e.target.matches("[data-preview]")) {
+      try {
+        await rpc({ type: "vault.preview", fileId: id });
+      } catch (ex) {
+        alert(`preview failed: ${ex.message}`);
+      }
+    } else if (e.target.matches("[data-download]")) {
       const file = allFiles.find((f) => f.id === id);
       if (!file) return;
-      const dest = await showSaveDialog(file.name);
+      const suggested = file.name.split(/[\\/]/).pop() ?? file.name;
+      const dest = await showSaveDialog(suggested);
       if (dest) {
         try {
           await rpc({ type: "vault.download", fileId: id, destPath: dest });
@@ -76,13 +191,13 @@ export async function files(root) {
     }
   });
 
-  // Drag-and-drop
+  // Drag-and-drop — uploads land in the current folder.
   let overlay = null;
   const setOverlay = (on) => {
     if (on && !overlay) {
       overlay = document.createElement("div");
       overlay.className = "drop-overlay";
-      overlay.textContent = "drop to upload";
+      overlay.textContent = currentFolder ? `drop to upload into ${currentFolder}` : "drop to upload";
       root.appendChild(overlay);
     } else if (!on && overlay) {
       overlay.remove();
@@ -93,7 +208,6 @@ export async function files(root) {
   root.addEventListener("dragenter", (e) => { e.preventDefault(); setOverlay(true); });
   root.addEventListener("dragover", (e) => e.preventDefault());
   root.addEventListener("dragleave", (e) => {
-    // Only remove overlay when leaving the root element, not its children
     if (!root.contains(e.relatedTarget)) setOverlay(false);
   });
   root.addEventListener("drop", async (e) => {
@@ -106,7 +220,11 @@ export async function files(root) {
 
   async function doUpload(localPath) {
     try {
-      await rpc({ type: "vault.upload", localPath });
+      await rpc({
+        type: "vault.upload",
+        localPath,
+        folderPrefix: currentFolder || undefined,
+      });
       allFiles = await rpc({ type: "vault.list" });
       render();
     } catch (ex) {
@@ -116,7 +234,7 @@ export async function files(root) {
 }
 
 function escapeHtml(s) {
-  return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
 function humanSize(n) {

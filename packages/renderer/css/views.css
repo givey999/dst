@@ -43,7 +43,7 @@
 
 .files {
   display: grid;
-  grid-template-rows: auto 1fr;
+  grid-template-rows: auto auto 1fr;
   height: 100%;
 }
 
@@ -86,6 +86,24 @@
 .file-action-btn { background: transparent; border: none; color: var(--fg-dim); padding: 4px 8px; font-size: 12px; cursor: pointer; }
 .file-action-btn:hover { color: var(--fg); }
 .file-action-btn.danger:hover { color: var(--danger); }
+
+.folder-row { cursor: pointer; }
+.folder-row .file-name { color: var(--fg); }
+
+.files-breadcrumb {
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--fg-dim);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.crumb { cursor: pointer; }
+.crumb:hover { color: var(--accent); }
+.crumb-sep { color: var(--fg-faint); margin: 0 2px; }
+.crumb-search { color: var(--fg-dim); }
 
 .uploads { padding: 16px; overflow-y: auto; height: 100%; }
 .upload-row { display: grid; grid-template-rows: auto auto; gap: 4px; padding: 12px; border-bottom: 1px solid var(--border); }
