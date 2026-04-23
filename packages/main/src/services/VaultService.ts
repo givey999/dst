@@ -99,6 +99,34 @@ export class VaultService {
     return this.index.current().files;
   }
 
+  listFolders(): string[] {
+    this.requireUnlocked();
+    return this.index.listFolders();
+  }
+
+  async createFolder(folderPath: string): Promise<void> {
+    this.requireUnlocked();
+    this.index.addFolder(folderPath);
+    this.scheduleIndexSave();
+  }
+
+  async deleteFolder(folderPath: string): Promise<void> {
+    this.requireUnlocked();
+    const clean = folderPath.replace(/^\/+|\/+$/g, "");
+    const prefix = clean + "/";
+    // Delete all files whose name is inside this folder (recursively).
+    const toDelete = this.index.current().files.filter((f) => f.name.startsWith(prefix));
+    for (const f of toDelete) {
+      await this.delete(f.id);
+    }
+    // Also remove any child folders from the explicit list.
+    const childFolders = this.index.listFolders().filter((p) => p === clean || p.startsWith(prefix));
+    for (const p of childFolders) {
+      this.index.removeFolder(p);
+    }
+    this.scheduleIndexSave();
+  }
+
   upload(localPath: string, folderPrefix?: string): UploadHandle {
     this.requireUnlocked();
     const uploadId = randomUUID();

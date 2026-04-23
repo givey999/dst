@@ -14,6 +14,7 @@ export async function files(root) {
   `;
 
   let allFiles = await rpc({ type: "vault.list" });
+  let allFolders = await rpc({ type: "vault.listFolders" });
   let filter = "";
   let currentFolder = ""; // "" = root. No leading or trailing slash.
 
@@ -21,10 +22,17 @@ export async function files(root) {
   const searchInput = root.querySelector("[data-search]");
   const breadcrumbEl = root.querySelector("[data-breadcrumb]");
 
-  function listAtPath(files, prefix) {
+  async function refresh() {
+    allFiles = await rpc({ type: "vault.list" });
+    allFolders = await rpc({ type: "vault.listFolders" });
+    render();
+  }
+
+  function listAtPath(files, folders, prefix) {
     const prefixSlash = prefix === "" ? "" : prefix + "/";
-    const folders = new Set();
+    const folderSet = new Set();
     const filesOut = [];
+    // Folders implied by file paths.
     for (const f of files) {
       if (prefixSlash && !f.name.startsWith(prefixSlash)) continue;
       const rest = prefixSlash ? f.name.slice(prefixSlash.length) : f.name;
@@ -32,11 +40,20 @@ export async function files(root) {
       if (slashIdx < 0) {
         filesOut.push({ ...f, displayName: rest });
       } else {
-        folders.add(rest.slice(0, slashIdx));
+        folderSet.add(rest.slice(0, slashIdx));
       }
     }
+    // Explicit (possibly empty) folders.
+    for (const p of folders) {
+      if (p === prefix) continue;
+      if (prefixSlash && !p.startsWith(prefixSlash)) continue;
+      const rest = prefixSlash ? p.slice(prefixSlash.length) : p;
+      const slashIdx = rest.indexOf("/");
+      const name = slashIdx < 0 ? rest : rest.slice(0, slashIdx);
+      if (name) folderSet.add(name);
+    }
     return {
-      folders: [...folders].sort(),
+      folders: [...folderSet].sort(),
       files: filesOut.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)),
     };
   }
@@ -77,7 +94,7 @@ export async function files(root) {
       return;
     }
 
-    const { folders, files: filesHere } = listAtPath(allFiles, currentFolder);
+    const { folders, files: filesHere } = listAtPath(allFiles, allFolders, currentFolder);
 
     if (folders.length === 0 && filesHere.length === 0) {
       const hint = currentFolder === ""
@@ -153,7 +170,7 @@ export async function files(root) {
       // If the input is still in the DOM (wasn't replaced by a render), swap back to the button.
       if (inp.parentNode) inp.replaceWith(btn);
     };
-    const commit = () => {
+    const commit = async () => {
       if (committed) return;
       const clean = inp.value.trim().replace(/^\/+|\/+$/g, "");
       if (!clean || clean.includes("/")) {
@@ -161,8 +178,15 @@ export async function files(root) {
         return;
       }
       committed = true;
-      currentFolder = currentFolder === "" ? clean : currentFolder + "/" + clean;
-      render();
+      const newPath = currentFolder === "" ? clean : currentFolder + "/" + clean;
+      try {
+        await rpc({ type: "vault.createFolder", path: newPath });
+      } catch (ex) {
+        alert(`couldn't create folder: ${ex.message}`);
+        return;
+      }
+      currentFolder = newPath;
+      await refresh();
     };
     inp.addEventListener("keydown", (e) => {
       if (e.key === "Enter") { e.preventDefault(); commit(); }
@@ -206,8 +230,7 @@ export async function files(root) {
       if (!confirm(`Delete "${name}"?`)) return;
       try {
         await rpc({ type: "vault.delete", fileId: id });
-        allFiles = await rpc({ type: "vault.list" });
-        render();
+        await refresh();
       } catch (ex) {
         alert(`delete failed: ${ex.message}`);
       }
@@ -248,8 +271,7 @@ export async function files(root) {
         localPath,
         folderPrefix: currentFolder || undefined,
       });
-      allFiles = await rpc({ type: "vault.list" });
-      render();
+      await refresh();
     } catch (ex) {
       alert(`upload failed: ${ex.message}`);
     }

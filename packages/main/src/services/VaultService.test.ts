@@ -125,6 +125,29 @@ describe("VaultService", () => {
     expect(files[0]?.name.includes("/")).toBe(false);
   });
 
+  it("createFolder persists an empty folder and dedupes", async () => {
+    await svc.createFolder("photos");
+    await svc.createFolder("photos"); // duplicate — should be a no-op
+    await svc.createFolder("/photos/2024/"); // trim slashes
+    const folders = svc.listFolders();
+    expect(folders).toContain("photos");
+    expect(folders).toContain("photos/2024");
+    expect(folders.filter((f) => f === "photos")).toHaveLength(1);
+  });
+
+  it("deleteFolder removes the folder + every file inside", async () => {
+    const srcPath = await tmpFile(Buffer.from("x"));
+    await svc.upload(srcPath, "docs/legal").done;
+    await svc.createFolder("docs/legal");
+    await svc.createFolder("docs/legal/subdir");
+    expect(svc.list().length).toBe(1);
+
+    await svc.deleteFolder("docs/legal");
+    expect(svc.list().length).toBe(0);
+    expect(svc.listFolders()).not.toContain("docs/legal");
+    expect(svc.listFolders()).not.toContain("docs/legal/subdir");
+  });
+
   it("garbage collect removes orphan chunks from #files", async () => {
     const srcPath = await tmpFile(Buffer.from("normal upload"));
     await svc.upload(srcPath).done;

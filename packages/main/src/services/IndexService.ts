@@ -23,6 +23,9 @@ export interface VaultIndex {
   updatedAt: string;
   revision: number;
   files: FileEntry[];
+  // Explicit empty-folder paths (no leading/trailing slash). Optional for
+  // backward compatibility with vaults created before folder support.
+  folders?: string[];
 }
 
 interface DiscordAttachmentReader {
@@ -117,6 +120,36 @@ export class IndexService {
   findFile(fileId: string): FileEntry | null {
     const idx = this.current();
     return idx.files.find((f) => f.id === fileId) ?? null;
+  }
+
+  listFolders(): string[] {
+    return this.current().folders ?? [];
+  }
+
+  addFolder(folderPath: string): void {
+    const idx = this.current();
+    const clean = folderPath.replace(/^\/+|\/+$/g, "");
+    if (!clean) throw new Error("folder path must not be empty");
+    if (!idx.folders) idx.folders = [];
+    if (!idx.folders.includes(clean)) {
+      idx.folders.push(clean);
+      idx.updatedAt = new Date().toISOString();
+      idx.revision += 1;
+    }
+  }
+
+  removeFolder(folderPath: string): boolean {
+    const idx = this.current();
+    const clean = folderPath.replace(/^\/+|\/+$/g, "");
+    if (!idx.folders) return false;
+    const before = idx.folders.length;
+    idx.folders = idx.folders.filter((p) => p !== clean);
+    if (idx.folders.length !== before) {
+      idx.updatedAt = new Date().toISOString();
+      idx.revision += 1;
+      return true;
+    }
+    return false;
   }
 
   async save(opts: { force?: boolean } = {}): Promise<void> {

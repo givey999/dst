@@ -56,6 +56,9 @@ export type IpcRequest =
   | { type: "vault.lock" }
   | { type: "vault.status" }
   | { type: "vault.list" }
+  | { type: "vault.listFolders" }
+  | { type: "vault.createFolder"; path: string }
+  | { type: "vault.deleteFolder"; path: string }
   | { type: "vault.upload"; localPath: string; folderPrefix?: string }
   | { type: "vault.download"; fileId: string; destPath: string }
   | { type: "vault.preview"; fileId: string }

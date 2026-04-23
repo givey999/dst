@@ -84,6 +84,22 @@ export function registerIpc(app: AppState): void {
           if (!app.vault) throw new Error("vault not ready");
           return ok(app.vault.list());
 
+        case "vault.listFolders":
+          if (!app.vault) throw new Error("vault not ready");
+          return ok(app.vault.listFolders());
+
+        case "vault.createFolder":
+          if (!app.vault) throw new Error("vault not ready");
+          await app.vault.createFolder(req.path);
+          await app.vault.flush();
+          return ok(null);
+
+        case "vault.deleteFolder":
+          if (!app.vault) throw new Error("vault not ready");
+          await app.vault.deleteFolder(req.path);
+          await app.vault.flush();
+          return ok(null);
+
         case "vault.upload": {
           if (!app.vault) throw new Error("vault not ready");
           const handle = app.vault.upload(req.localPath, req.folderPrefix);
